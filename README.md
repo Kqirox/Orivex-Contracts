@@ -31,16 +31,16 @@ A world where anyone, anywhere can access quality education, earn while learning
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      PWA Frontend (React)                    │
+│                      PWA Frontend (React)                   │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
-│                     Backend API (Node.js)                    │
+│                     Backend API (Node.js)                   │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
-│                   Stellar Blockchain Layer                   │
-│      (Horizon API • Soroban Contracts • Asset Management)    │
+│                   Stellar Blockchain Layer                  │
+│      (Horizon API • Soroban Contracts • Asset Management)   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
