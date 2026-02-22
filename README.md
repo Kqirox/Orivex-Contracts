@@ -1,4 +1,4 @@
-*Orivex** is a decentralized learn-to-earn platform built on the Stellar blockchain that democratizes access to financial literacy and digital skills while creating verifiable, portable credentials for learners worldwide.
+**Orivex** is a decentralized learn-to-earn platform built on the Stellar blockchain that democratizes access to financial literacy and digital skills while creating verifiable, portable credentials for learners worldwide.
 
 ## Vision
 
