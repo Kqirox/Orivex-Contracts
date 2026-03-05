@@ -1,16 +1,21 @@
-name: Soroban CI
+name: Rust CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - develop
   pull_request:
-
-env:
-  CARGO_TERM_COLOR: always
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 jobs:
-  build-and-test:
+  ci:
+    name: Rust CI
     runs-on: ubuntu-latest
+    
     defaults:
       run:
         working-directory: ./contracts
@@ -19,41 +24,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
+      - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
 
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            contracts/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/**/Cargo.lock') }}
+          cache-on-failure: true
+          workspaces: "./contracts"
 
-      - name: Check code formatting
+      - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run Clippy linter
+      - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo test
 
-      - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
-
-      - name: Build hello-orivex contract
-        working-directory: ./contracts/hello-orivex
-        run: stellar contract build
-
-      - name: Upload WASM artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wasm-contracts
-          path: contracts/hello-orivex/target/wasm32-unknown-unknown/release/*.wasm
+      - name: Build all Wasm artifacts
+        run: cargo build --target wasm32-unknown-unknown --release
