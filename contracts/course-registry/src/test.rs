@@ -1,5 +1,8 @@
 use crate::{CourseRegistry, CourseRegistryClient};
-use soroban_sdk::{testutils::{Address as _, Events}, Address, BytesN, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Events},
+    Address, BytesN, Env,
+};
 
 /// Helper function to create a test environment and register the contract.
 fn setup_test_env() -> (Env, CourseRegistryClient<'static>, Address, Address) {

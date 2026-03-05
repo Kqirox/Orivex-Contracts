@@ -2,7 +2,7 @@
 use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env};
 
 /// Course struct representing a course in the registry.
-/// 
+///
 /// # Fields
 /// * `instructor` - The address of the course instructor who can modify the course
 /// * `metadata_hash` - The IPFS hash (32 bytes) pointing to off-chain course content
@@ -31,7 +31,7 @@ pub struct MetadataUpdated {
 }
 
 /// CourseRegistry contract - Manages course metadata on the Orivex platform.
-/// 
+///
 /// This contract allows instructors to register courses and update their metadata
 /// while maintaining on-chain course IDs for enrolled learners.
 #[contract]
@@ -40,7 +40,7 @@ pub struct CourseRegistry;
 #[contractimpl]
 impl CourseRegistry {
     /// Updates the metadata hash for an existing course.
-    /// 
+    ///
     /// This function allows the designated instructor of a course to update the IPFS hash
     /// pointing to the off-chain content. This is crucial for fixing typos or updating
     /// outdated curriculum while maintaining the enrolled learners' progress.
@@ -87,7 +87,7 @@ impl CourseRegistry {
     }
 
     /// Creates a new course in the registry.
-    /// 
+    ///
     /// This is a helper function for testing and course creation.
     ///
     /// # Arguments
@@ -98,16 +98,11 @@ impl CourseRegistry {
     ///
     /// # Panics
     /// * If a course with the given ID already exists
-    pub fn create_course(
-        env: Env,
-        id: u32,
-        instructor: Address,
-        metadata_hash: BytesN<32>,
-    ) {
+    pub fn create_course(env: Env, id: u32, instructor: Address, metadata_hash: BytesN<32>) {
         instructor.require_auth();
 
         let key = DataKey::Course(id);
-        
+
         // Check if course already exists
         if env.storage().persistent().has(&key) {
             panic!("Course already exists");
