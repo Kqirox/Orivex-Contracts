@@ -47,7 +47,7 @@ For detailed architecture, see [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Getting Started
 
-### Prerequisites
+### Prerequisite
 
 - Node.js 20+
 - pnpm 10+
