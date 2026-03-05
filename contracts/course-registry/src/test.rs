@@ -18,9 +18,7 @@ fn test_get_course_exists() {
 
     let key = DataKey::Course(course_id);
     env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .set(&key, &course);
+        env.storage().persistent().set(&key, &course);
     });
 
     // Test: Retrieve the course
@@ -61,9 +59,7 @@ fn test_get_course_opt_exists() {
 
     let key = DataKey::Course(course_id);
     env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .set(&key, &course);
+        env.storage().persistent().set(&key, &course);
     });
 
     // Test: Retrieve the course using get_course_opt

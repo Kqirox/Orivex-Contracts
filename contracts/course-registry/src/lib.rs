@@ -40,7 +40,7 @@ impl CourseRegistry {
     pub fn get_course(env: Env, id: u32) -> Course {
         // 1. Construct DataKey::Course(id)
         let key = DataKey::Course(id);
-        
+
         // 2. Fetch Course struct from Persistent storage
         // 3. Assert course exists (panic if not found)
         env.storage()
@@ -60,12 +60,10 @@ impl CourseRegistry {
     pub fn get_course_opt(env: Env, id: u32) -> Option<Course> {
         // 1. Construct DataKey::Course(id)
         let key = DataKey::Course(id);
-        
+
         // 2. Fetch Course struct from Persistent storage
         // 3. Return Option<Course> (None if not found)
-        env.storage()
-            .persistent()
-            .get(&key)
+        env.storage().persistent().get(&key)
     }
 }
 
