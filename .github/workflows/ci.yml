@@ -36,6 +36,9 @@ jobs:
           cache-on-failure: true
           workspaces: "./contracts"
 
+      - name: Install Stellar CLI
+        uses: stellar/stellar-cli@v23.0.1
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -46,4 +49,4 @@ jobs:
         run: cargo test
 
       - name: Build all Wasm artifacts
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: stellar contract build
