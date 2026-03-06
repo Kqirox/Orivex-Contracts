@@ -105,3 +105,8 @@ impl CourseRegistry {
 
 #[cfg(test)]
 mod test;
+#![no_std]
+
+pub mod types;
+
+pub use types::{Course, DataKey};
