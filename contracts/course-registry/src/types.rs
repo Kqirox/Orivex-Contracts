@@ -14,8 +14,8 @@ pub struct Course {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    Course(u32),              
-    Progress(Address, u32),    
-    CourseCount,               
-    Admin,                    
+    Course(u32),
+    Progress(Address, u32),
+    CourseCount,
+    Admin,
 }
