@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
 pub mod types;
 use types::{Course, DataKey};
@@ -7,19 +7,26 @@ use types::{Course, DataKey};
 #[contract]
 pub struct CourseRegistry;
 
+#[contractevent]
+pub struct CourseCreated {
+    #[topic]
+    pub id: u32,
+    #[topic]
+    pub instructor: Address,
+    pub total_modules: u32,
+}
+
 #[contractimpl]
 impl CourseRegistry {
+    /// Sets the official Protocol Admin. Must be called once upon deployment.
+    pub fn initialize(env: Env, admin: Address) {
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic!("Already initialized");
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
     /// Registers a new course on-chain.
-    ///
-    /// # Arguments
-    /// * `env`            - The Soroban environment
-    /// * `admin`          - Protocol admin address (must authorise)
-    /// * `instructor`     - Address of the course instructor
-    /// * `total_modules`  - Number of modules in the course (must be > 0)
-    /// * `metadata_hash`  - 32-byte hash of off-chain course metadata
-    ///
-    /// # Returns
-    /// The newly assigned course ID (1-based, monotonically incrementing).
     pub fn create_course(
         env: Env,
         admin: Address,
@@ -27,13 +34,24 @@ impl CourseRegistry {
         total_modules: u32,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // 1. Authenticate the admin.
+        // Authenticate the caller's cryptographic signature.
         admin.require_auth();
 
-        // 2. Validate inputs.
+        //  Verify the caller is the actual registered protocol admin.
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        // Validate inputs.
         assert!(total_modules > 0, "total_modules must be greater than 0");
 
-        // 3. Fetch and increment the global course counter (Instance storage).
+        // Fetch and increment the global course counter.
         let current_count: u32 = env
             .storage()
             .instance()
@@ -42,39 +60,29 @@ impl CourseRegistry {
         let new_id = current_count + 1;
         env.storage().instance().set(&DataKey::CourseCount, &new_id);
 
-        // 4. Build the Course struct.
+        // Build and persist the Course struct.
         let course = Course {
             instructor: instructor.clone(),
             total_modules,
             metadata_hash,
             active: true,
         };
-
-        // 5. Persist to Persistent storage (survives ledger entry expiry extensions).
         env.storage()
             .persistent()
             .set(&DataKey::Course(new_id), &course);
 
-        // 6. Emit a structured CourseCreated event.
-        env.events().publish(
-            (Symbol::new(&env, "CourseCreated"), new_id),
-            (instructor, total_modules, new_id),
-        );
+        // Emit the structured event using the V23 `.publish()` method.
+        CourseCreated {
+            id: new_id,
+            instructor,
+            total_modules,
+        }
+        .publish(&env);
 
         new_id
     }
 
-    /// Returns the Course struct for the given course ID.
-    ///
-    /// Panics if the course does not exist.
-    pub fn get_course(env: Env, course_id: u32) -> Course {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Course(course_id))
-            .expect("course not found")
-    }
-
-    /// Returns the total number of courses registered so far.
+    /// Helper to check the current total number of courses.
     pub fn course_count(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -83,5 +91,4 @@ impl CourseRegistry {
     }
 }
 
-#[cfg(test)]
 mod test;
