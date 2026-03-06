@@ -71,7 +71,6 @@ fn test_get_course_returns_correct_data() {
     let id = client.create_course(&admin, &instructor, &7, &hash);
     let course = client.get_course(&id);
 
-    assert_eq!(course.id, id);
     assert_eq!(course.instructor, instructor);
     assert_eq!(course.total_modules, 7);
     assert_eq!(course.metadata_hash, hash);

@@ -1,27 +1,8 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 
-// ── Storage Keys ──────────────────────────────────────────────────────────────
-
-#[contracttype]
-pub enum DataKey {
-    CourseCount,
-    Course(u32),
-}
-
-// ── Data Types ────────────────────────────────────────────────────────────────
-
-#[contracttype]
-#[derive(Clone)]
-pub struct Course {
-    pub id: u32,
-    pub instructor: Address,
-    pub total_modules: u32,
-    pub metadata_hash: BytesN<32>,
-    pub active: bool,
-}
-
-// ── Contract ──────────────────────────────────────────────────────────────────
+pub mod types;
+use types::{Course, DataKey};
 
 #[contract]
 pub struct CourseRegistry;
@@ -63,7 +44,6 @@ impl CourseRegistry {
 
         // 4. Build the Course struct.
         let course = Course {
-            id: new_id,
             instructor: instructor.clone(),
             total_modules,
             metadata_hash,
@@ -105,8 +85,3 @@ impl CourseRegistry {
 
 #[cfg(test)]
 mod test;
-#![no_std]
-
-pub mod types;
-
-pub use types::{Course, DataKey};
