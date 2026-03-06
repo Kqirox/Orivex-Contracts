@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "course-registry",
+  "contracts/*",
 ]
 
 [workspace.dependencies]
