@@ -7,6 +7,7 @@ description = "Reward pool contract for the Orivex platform"
 license = "MIT"
 repository = "https://github.com/Kqirox/orivex-contracts"
 
+
 [lib]
 crate-type = ["lib", "cdylib"]
 doctest = false

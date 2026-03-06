@@ -18,11 +18,11 @@ pub struct PoolInitialized {
 #[contractimpl]
 impl RewardPool {
     /// Initializes the RewardPool contract with admin and token addresses.
-    /// 
+    ///
     /// # Arguments
     /// * `admin` - The admin address that will have administrative control
     /// * `token` - The SAC token address to be used as reward token
-    /// 
+    ///
     /// # Panics
     /// * If contract is already initialized
     /// * If admin authentication fails
