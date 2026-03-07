@@ -1,31 +1,129 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Env, String};
+use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
-/// Course registry contract for managing courses on the Orivex platform.
+pub mod types;
+use types::{Course, DataKey};
+
 #[contract]
 pub struct CourseRegistry;
 
-/// Represents a course in the registry.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Course {
-    /// The instructor of the course
-    pub instructor: String,
-    /// The status of the course (e.g., "active", "draft", "archived")
-    pub status: String,
-    /// The number of modules in the course
-    pub module_count: u32,
+#[contractevent]
+pub struct MetadataUpdated {
+    #[topic]
+    pub id: u32,
+    #[topic]
+    pub instructor: Address,
+    pub new_hash: BytesN<32>,
 }
 
-/// Data keys for persistent storage
-#[contracttype]
-#[derive(Clone)]
-pub enum DataKey {
-    Course(u32),
+#[contractevent]
+pub struct CourseCreated {
+    #[topic]
+    pub id: u32,
+    #[topic]
+    pub instructor: Address,
+    pub total_modules: u32,
 }
 
 #[contractimpl]
 impl CourseRegistry {
+    /// Sets the official Protocol Admin. Must be called once upon deployment.
+    pub fn initialize(env: Env, admin: Address) {
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic!("Already initialized");
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// Registers a new course on-chain.
+    pub fn create_course(
+        env: Env,
+        admin: Address,
+        instructor: Address,
+        total_modules: u32,
+        metadata_hash: BytesN<32>,
+    ) -> u32 {
+        // Authenticate the caller's cryptographic signature.
+        admin.require_auth();
+
+        //  Verify the caller is the actual registered protocol admin.
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        // Validate inputs.
+        assert!(total_modules > 0, "total_modules must be greater than 0");
+
+        // Fetch and increment the global course counter.
+        let current_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CourseCount)
+            .unwrap_or(0);
+        let new_id = current_count + 1;
+        env.storage().instance().set(&DataKey::CourseCount, &new_id);
+
+        // Build and persist the Course struct.
+        let course = Course {
+            instructor: instructor.clone(),
+            total_modules,
+            metadata_hash,
+            active: true,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(new_id), &course);
+
+        // Emit the structured event using the V23 `.publish()` method.
+        CourseCreated {
+            id: new_id,
+            instructor,
+            total_modules,
+        }
+        .publish(&env);
+
+        new_id
+    }
+
+    /// Updates the IPFS metadata hash for a course. Only callable by the course instructor.
+    pub fn update_metadata(env: Env, id: u32, new_hash: BytesN<32>) {
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        course.instructor.require_auth();
+
+        let instructor = course.instructor.clone();
+        course.metadata_hash = new_hash.clone();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(id), &course);
+
+        MetadataUpdated {
+            id,
+            instructor,
+            new_hash,
+        }
+        .publish(&env);
+    }
+
+    /// Helper to check the current total number of courses.
+    pub fn course_count(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::CourseCount)
+            .unwrap_or(0)
+    }
+
     /// Returns the full details of a specific course.
     ///
     /// # Arguments
@@ -33,7 +131,7 @@ impl CourseRegistry {
     /// * `id` - The course ID
     ///
     /// # Returns
-    /// The Course struct if found, or None if the course doesn't exist
+    /// The Course struct if found
     ///
     /// # Panics
     /// Panics if the course ID is invalid (course doesn't exist in storage)
@@ -48,24 +146,6 @@ impl CourseRegistry {
             .get(&key)
             .expect("Course not found")
     }
-
-    /// Returns the full details of a specific course as an Option.
-    ///
-    /// # Arguments
-    /// * `env` - The Soroban environment
-    /// * `id` - The course ID
-    ///
-    /// # Returns
-    /// Some(Course) if found, None if the course doesn't exist
-    pub fn get_course_opt(env: Env, id: u32) -> Option<Course> {
-        // 1. Construct DataKey::Course(id)
-        let key = DataKey::Course(id);
-
-        // 2. Fetch Course struct from Persistent storage
-        // 3. Return Option<Course> (None if not found)
-        env.storage().persistent().get(&key)
-    }
 }
 
-#[cfg(test)]
 mod test;
