@@ -1,5 +1,5 @@
 [workspace]
-members = ["hello-orivex", "course-registry", "reward-pool",]
+members = ["course-registry", "reward-pool"]
 resolver = "2"
 
 [workspace.dependencies]
