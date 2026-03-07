@@ -43,10 +43,8 @@ impl CourseRegistry {
         total_modules: u32,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // Authenticate the caller's cryptographic signature.
         admin.require_auth();
 
-        //  Verify the caller is the actual registered protocol admin.
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -57,10 +55,8 @@ impl CourseRegistry {
             "Unauthorized: Caller is not the protocol admin"
         );
 
-        // Validate inputs.
         assert!(total_modules > 0, "total_modules must be greater than 0");
 
-        // Fetch and increment the global course counter.
         let current_count: u32 = env
             .storage()
             .instance()
@@ -69,7 +65,6 @@ impl CourseRegistry {
         let new_id = current_count + 1;
         env.storage().instance().set(&DataKey::CourseCount, &new_id);
 
-        // Build and persist the Course struct.
         let course = Course {
             instructor: instructor.clone(),
             total_modules,
@@ -80,7 +75,6 @@ impl CourseRegistry {
             .persistent()
             .set(&DataKey::Course(new_id), &course);
 
-        // Emit the structured event using the V23 `.publish()` method.
         CourseCreated {
             id: new_id,
             instructor,
@@ -116,6 +110,27 @@ impl CourseRegistry {
         .publish(&env);
     }
 
+    /// Enrolls a learner in an active course, initializing their progress to 0.
+    pub fn enroll(env: Env, learner: Address, id: u32) {
+        learner.require_auth();
+
+        let course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        assert!(course.active, "Course is not active");
+
+        let progress_key = DataKey::Progress(learner.clone(), id);
+        assert!(
+            !env.storage().persistent().has(&progress_key),
+            "Learner already enrolled"
+        );
+
+        env.storage().persistent().set(&progress_key, &0u32);
+    }
+
     /// Helper to check the current total number of courses.
     pub fn course_count(env: Env) -> u32 {
         env.storage()
@@ -139,6 +154,35 @@ impl CourseRegistry {
             .unwrap_or(0);
 
         progress >= course.total_modules
+    }
+
+    /// Returns the full details of a specific course.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `id` - The course ID
+    ///
+    /// # Returns
+    /// The Course struct if found
+    ///
+    /// # Panics
+    /// Panics if the course ID is invalid (course doesn't exist in storage)
+    pub fn get_course(env: Env, id: u32) -> Course {
+        // 1. Construct DataKey::Course(id)
+        let key = DataKey::Course(id);
+
+        // 2. Fetch Course struct from Persistent storage
+        // 3. Assert course exists (panic if not found)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .expect("Course not found")
+    }
+
+    /// Returns a learner's completed module count for a course. Returns 0 if the learner has not enrolled.
+    pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
+        let key = DataKey::Progress(learner, id);
+        env.storage().persistent().get(&key).unwrap_or(0)
     }
 }
 
