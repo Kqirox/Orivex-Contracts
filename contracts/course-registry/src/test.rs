@@ -22,10 +22,7 @@ fn dummy_hash(env: &Env) -> BytesN<32> {
 }
 
 /// Seeds an initialized contract with one course and returns (admin, instructor, course_id).
-fn setup_with_course(
-    env: &Env,
-    client: &CourseRegistryClient,
-) -> (Address, Address, u32) {
+fn setup_with_course(env: &Env, client: &CourseRegistryClient) -> (Address, Address, u32) {
     let admin = Address::generate(env);
     let instructor = Address::generate(env);
     client.initialize(&admin);
