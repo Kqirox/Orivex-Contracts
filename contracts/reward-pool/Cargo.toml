@@ -1,11 +1,12 @@
 [package]
-name = "course-registry"
+name = "reward-pool"
 version = "0.1.0"
 edition = "2021"
 authors = ["Orivex Team"]
-description = "Course registry contract for the Orivex platform"
+description = "Reward pool contract for the Orivex platform"
 license = "MIT"
 repository = "https://github.com/Kqirox/orivex-contracts"
+
 
 [lib]
 crate-type = ["lib", "cdylib"]
@@ -16,4 +17,3 @@ soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-
