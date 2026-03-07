@@ -164,7 +164,7 @@ fn test_create_and_get_course() {
     assert_eq!(retrieved_course.instructor, instructor);
     assert_eq!(retrieved_course.total_modules, 5);
     assert_eq!(retrieved_course.metadata_hash, hash);
-    assert_eq!(retrieved_course.active, true);
+    assert!(retrieved_course.active);
 }
 
 #[test]
