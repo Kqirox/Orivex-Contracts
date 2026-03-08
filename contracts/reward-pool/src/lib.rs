@@ -116,8 +116,15 @@ impl RewardPool {
             panic!("Amount must be positive");
         }
 
-        // 3. Construct DataKey::Spender(caller.clone())
-        // 4. Fetch the boolean from Persistent storage. Assert it is true
+        // 3. Check if contract is initialized first
+        let token_id: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+
+        // 4. Construct DataKey::Spender(caller.clone())
+        // 5. Fetch the boolean from Persistent storage. Assert it is true
         let is_authorized: bool = env
             .storage()
             .persistent()
@@ -127,13 +134,6 @@ impl RewardPool {
         if !is_authorized {
             panic!("Caller is not an authorized spender");
         }
-
-        // 5. Fetch the 'Token' address from Instance storage
-        let token_id: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .expect("Not initialized");
 
         // 6. Initialize token::Client::new(&env, &token_id)
         let token_client = token::Client::new(&env, &token_id);
