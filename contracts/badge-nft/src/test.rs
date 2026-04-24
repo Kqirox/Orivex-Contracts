@@ -100,7 +100,7 @@ fn test_mint_badge_emits_event() {
     let last_event = env.events().all().last().unwrap();
 
     let mut data_map = Map::new(&env);
-    data_map.set(Symbol::new(&env, "minted_at"), last_event.2.clone());
+    data_map.set(Symbol::new(&env, "minted_at"), last_event.2);
 
     let expected_topic: Vec<Val> =
         (Symbol::new(&env, "badge_minted"), &learner, 1u32).into_val(&env);
@@ -277,9 +277,9 @@ fn test_get_badges_returns_all_badges() {
         course_ids.push_back(badge.course_id);
     }
 
-    assert!(course_ids.contains(&1));
-    assert!(course_ids.contains(&2));
-    assert!(course_ids.contains(&3));
+    assert!(course_ids.contains(1));
+    assert!(course_ids.contains(2));
+    assert!(course_ids.contains(3));
 }
 
 // ── get_badge_count Tests ────────────────────────────────────────────────────
