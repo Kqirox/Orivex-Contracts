@@ -55,10 +55,10 @@ fn test_mint_badge_without_auth_succeeds_with_mock() {
     let learner = Address::generate(&env);
 
     client.initialize(&registry);
-    
+
     // With mock_all_auths(), this should succeed
     client.mint_badge(&registry, &learner, &1);
-    
+
     // Verify badge was minted
     assert_eq!(client.get_badge_count(&learner), 1);
 }
@@ -96,14 +96,15 @@ fn test_mint_badge_emits_event() {
 
     // Verify BadgeMinted event was emitted
     assert_eq!(env.events().all().len(), 1);
-    
+
     let last_event = env.events().all().last().unwrap();
-    
+
     let mut data_map = Map::new(&env);
     data_map.set(Symbol::new(&env, "minted_at"), last_event.2.clone());
-    
-    let expected_topic: Vec<Val> = (Symbol::new(&env, "badge_minted"), &learner, 1u32).into_val(&env);
-    
+
+    let expected_topic: Vec<Val> =
+        (Symbol::new(&env, "badge_minted"), &learner, 1u32).into_val(&env);
+
     assert_eq!(last_event.1, expected_topic);
 }
 
@@ -123,7 +124,7 @@ fn test_mint_badge_multiple_courses_same_learner() {
     // Verify learner has 3 badges
     let badges = client.get_badges(&learner);
     assert_eq!(badges.len(), 3);
-    
+
     // Verify each badge has correct course_id
     assert_eq!(badges.get(0).unwrap().course_id, 1);
     assert_eq!(badges.get(1).unwrap().course_id, 2);
@@ -146,7 +147,7 @@ fn test_mint_badge_multiple_learners_same_course() {
     // Verify each learner has 1 badge
     assert_eq!(client.get_badge_count(&learner1), 1);
     assert_eq!(client.get_badge_count(&learner2), 1);
-    
+
     // Verify both have badge for course 1
     assert!(client.has_badge(&learner1, &1));
     assert!(client.has_badge(&learner2, &1));
@@ -232,7 +233,7 @@ fn test_mint_badge_timestamp_is_set() {
     // The important thing is that the Badge struct has the minted_at field
     let badges = client.get_badges(&learner);
     let badge = badges.get(0).unwrap();
-    
+
     // In test environment without setting ledger timestamp, it defaults to 0
     // This is expected behavior - in production it will have real timestamp
     assert_eq!(badge.minted_at, 0);
@@ -269,13 +270,13 @@ fn test_get_badges_returns_all_badges() {
     // Get all badges
     let badges = client.get_badges(&learner);
     assert_eq!(badges.len(), 3);
-    
+
     // Verify all course IDs are present
     let mut course_ids: Vec<u32> = Vec::new(&env);
     for badge in badges.iter() {
         course_ids.push_back(badge.course_id);
     }
-    
+
     assert!(course_ids.contains(&1));
     assert!(course_ids.contains(&2));
     assert!(course_ids.contains(&3));
