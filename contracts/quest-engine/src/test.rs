@@ -97,7 +97,7 @@ fn test_create_build_quest_emits_event() {
     // Verify QuestCreated event was emitted
     let events = env.events().all();
     assert!(
-        events.len() >= 1,
+        !events.is_empty(),
         "Expected at least 1 event, got {}",
         events.len()
     );

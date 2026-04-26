@@ -48,7 +48,7 @@ impl QuestEngineContract {
         let token_client = token::Client::new(&env, &token_address);
 
         // 3. call token_client.transfer(employer, env.current_contract_address(), reward_amount).
-        token_client.transfer(&employer, &env.current_contract_address(), &reward_amount);
+        token_client.transfer(&employer, env.current_contract_address(), &reward_amount);
 
         // 4. Increment Quest ID counter.
         let mut quest_id: u32 = env
