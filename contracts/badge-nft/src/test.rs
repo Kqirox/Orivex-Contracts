@@ -242,16 +242,32 @@ fn test_mint_badge_timestamp_is_set() {
 // ── get_badges Tests ─────────────────────────────────────────────────────────
 
 #[test]
-fn test_get_badges_returns_empty_for_new_learner() {
+fn test_get_badges_comprehensive() {
     let (env, client) = setup();
     let registry = Address::generate(&env);
     let learner = Address::generate(&env);
 
     client.initialize(&registry);
 
-    // Get badges for learner with no badges
+    // 1. Initially should be empty
+    assert_eq!(client.get_badges(&learner).len(), 0);
+
+    // 2. Mint one badge
+    client.mint_badge(&registry, &learner, &101);
     let badges = client.get_badges(&learner);
-    assert_eq!(badges.len(), 0);
+    assert_eq!(badges.len(), 1);
+    assert_eq!(badges.get(0).unwrap().course_id, 101);
+
+    // 3. Mint another badge
+    client.mint_badge(&registry, &learner, &102);
+    let badges = client.get_badges(&learner);
+    assert_eq!(badges.len(), 2);
+    assert_eq!(badges.get(0).unwrap().course_id, 101);
+    assert_eq!(badges.get(1).unwrap().course_id, 102);
+
+    // 4. Verify isolation - another learner should have 0 badges
+    let other_learner = Address::generate(&env);
+    assert_eq!(client.get_badges(&other_learner).len(), 0);
 }
 
 #[test]
