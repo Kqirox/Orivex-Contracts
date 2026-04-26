@@ -5,8 +5,8 @@ use soroban_sdk::{
     Address, BytesN, Env,
 };
 
-use crate::{QuestEngineContract, QuestEngineContractClient};
 use crate::types::QuestType;
+use crate::{QuestEngineContract, QuestEngineContractClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -19,7 +19,9 @@ fn setup() -> (Env, QuestEngineContractClient<'static>, Address) {
 
     // Create a SAC token for USDC
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
 
     // Initialize the contract with token
     client.initialize(&token_id);
@@ -66,7 +68,10 @@ fn test_create_build_quest_success() {
     assert_eq!(quest_id, 1);
 
     // ✅ Acceptance: QuestEngine contract balance increases
-    assert_eq!(token_balance(&env, &token_id, &client.address), reward_amount);
+    assert_eq!(
+        token_balance(&env, &token_id, &client.address),
+        reward_amount
+    );
     assert_eq!(token_balance(&env, &token_id, &employer), 0);
 
     // ✅ Acceptance: Quest is saved as a Build type
@@ -91,7 +96,11 @@ fn test_create_build_quest_emits_event() {
 
     // Verify QuestCreated event was emitted
     let events = env.events().all();
-    assert!(events.len() >= 1, "Expected at least 1 event, got {}", events.len());
+    assert!(
+        events.len() >= 1,
+        "Expected at least 1 event, got {}",
+        events.len()
+    );
 }
 
 #[test]

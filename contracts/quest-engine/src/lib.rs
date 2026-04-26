@@ -3,9 +3,7 @@
 pub mod types;
 use types::{DataKey, Quest, QuestType};
 
-use soroban_sdk::{
-    contract, contractevent, contractimpl, token, Address, BytesN, Env,
-};
+use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
 #[contractevent]
 pub struct QuestCreated {
@@ -59,7 +57,9 @@ impl QuestEngineContract {
             .get(&DataKey::QuestCounter)
             .unwrap_or(0);
         quest_id += 1;
-        env.storage().instance().set(&DataKey::QuestCounter, &quest_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::QuestCounter, &quest_id);
 
         // 5. Create Quest struct with QuestType::Build.
         let quest = Quest {
@@ -71,7 +71,9 @@ impl QuestEngineContract {
         };
 
         // 6. Save to Persistent storage.
-        env.storage().persistent().set(&DataKey::Quest(quest_id), &quest);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Quest(quest_id), &quest);
 
         // 7. Emit QuestCreated event.
         QuestCreated {
