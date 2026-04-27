@@ -155,7 +155,9 @@ impl QuestEngineContract {
 
     /// Returns a submission by learner and quest ID.
     pub fn get_submission(env: Env, learner: Address, quest_id: u32) -> Option<Submission> {
-        env.storage().persistent().get(&DataKey::Submission(learner, quest_id))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Submission(learner, quest_id))
     }
 
     /// Allows an employer to review and approve/reject a learner's submission.

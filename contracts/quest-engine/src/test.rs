@@ -284,7 +284,10 @@ fn test_review_submission_approve_success() {
     client.submit_proof(&learner, &quest_id, &proof_hash);
 
     // Check initial balances
-    assert_eq!(token_balance(&env, &token_id, &client.address), reward_amount);
+    assert_eq!(
+        token_balance(&env, &token_id, &client.address),
+        reward_amount
+    );
     assert_eq!(token_balance(&env, &token_id, &learner), 0);
 
     // Approve submission
@@ -316,14 +319,20 @@ fn test_review_submission_reject_success() {
     client.submit_proof(&learner, &quest_id, &proof_hash);
 
     // Check initial balances (funds still locked)
-    assert_eq!(token_balance(&env, &token_id, &client.address), reward_amount);
+    assert_eq!(
+        token_balance(&env, &token_id, &client.address),
+        reward_amount
+    );
     assert_eq!(token_balance(&env, &token_id, &learner), 0);
 
     // Reject submission
     client.review_submission(&employer, &learner, &quest_id, &false);
 
     // Verify funds remain locked
-    assert_eq!(token_balance(&env, &token_id, &client.address), reward_amount);
+    assert_eq!(
+        token_balance(&env, &token_id, &client.address),
+        reward_amount
+    );
     assert_eq!(token_balance(&env, &token_id, &learner), 0);
 
     // Verify submission status updated
