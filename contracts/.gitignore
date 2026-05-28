@@ -1,9 +1,0 @@
-# Rust's output directory
-target
-
-# Cargo lock file
-Cargo.lock
-
-# Local settings
-.soroban
-.stellar
