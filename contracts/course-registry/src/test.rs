@@ -566,7 +566,6 @@ fn test_get_progress_tracks_completion() {
     assert_eq!(client.get_progress(&learner, &course_id), 3);
 }
 
-
 // ── Cross-contract: badge minting on course completion ────────────────────────
 
 /// Sets up a CourseRegistry + BadgeNFT pair wired together.
