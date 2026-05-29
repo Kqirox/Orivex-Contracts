@@ -5,6 +5,8 @@ use soroban_sdk::{
     Address, BytesN, Env,
 };
 
+use badge_nft::{BadgeNFT, BadgeNFTClient};
+
 use crate::{CourseRegistry, CourseRegistryClient, DataKey};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -562,4 +564,126 @@ fn test_get_progress_tracks_completion() {
 
     client.complete_module(&admin, &learner, &course_id);
     assert_eq!(client.get_progress(&learner, &course_id), 3);
+}
+
+
+// ── Cross-contract: badge minting on course completion ────────────────────────
+
+/// Sets up a CourseRegistry + BadgeNFT pair wired together.
+/// Returns (env, registry_client, badge_client, admin, learner, course_id).
+fn setup_with_badge_nft() -> (
+    Env,
+    CourseRegistryClient<'static>,
+    BadgeNFTClient<'static>,
+    Address,
+    Address,
+    u32,
+) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Deploy both contracts
+    let registry_id = env.register(CourseRegistry, ());
+    let badge_id = env.register(BadgeNFT, ());
+
+    let registry = CourseRegistryClient::new(&env, &registry_id);
+    let badge = BadgeNFTClient::new(&env, &badge_id);
+
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    // Initialize registry and wire the badge contract
+    registry.initialize(&admin);
+    registry.set_badge_nft(&admin, &badge_id);
+
+    // Initialize badge NFT with the registry as the authorized minter
+    badge.initialize(&registry_id);
+
+    // Create a 2-module course
+    let course_id = registry.create_course(&admin, &admin, &2, &dummy_hash(&env));
+
+    (env, registry, badge, admin, learner, course_id)
+}
+
+#[test]
+fn test_badge_minted_on_course_completion() {
+    let (_env, registry, badge, admin, learner, course_id) = setup_with_badge_nft();
+
+    // Complete module 1 — no badge yet
+    registry.complete_module(&admin, &learner, &course_id);
+    assert_eq!(badge.get_badge_count(&learner), 0);
+
+    // Complete module 2 (final) — badge must be minted
+    registry.complete_module(&admin, &learner, &course_id);
+    assert_eq!(badge.get_badge_count(&learner), 1);
+    assert!(badge.has_badge(&learner, &course_id));
+}
+
+#[test]
+fn test_badge_has_correct_course_id() {
+    let (_env, registry, badge, admin, learner, course_id) = setup_with_badge_nft();
+
+    // Complete both modules
+    registry.complete_module(&admin, &learner, &course_id);
+    registry.complete_module(&admin, &learner, &course_id);
+
+    let badges = badge.get_badges(&learner);
+    assert_eq!(badges.len(), 1);
+    assert_eq!(badges.get(0).unwrap().course_id, course_id);
+}
+
+#[test]
+fn test_badge_not_minted_for_intermediate_modules() {
+    let (_env, registry, badge, admin, learner, course_id) = setup_with_badge_nft();
+
+    // Only complete the first of two modules
+    registry.complete_module(&admin, &learner, &course_id);
+
+    // Badge count must still be 0
+    assert_eq!(badge.get_badge_count(&learner), 0);
+}
+
+#[test]
+fn test_badge_minted_independently_per_learner() {
+    let (env, registry, badge, admin, learner, course_id) = setup_with_badge_nft();
+    let learner2 = Address::generate(&env);
+
+    // Learner 1 finishes the course
+    registry.complete_module(&admin, &learner, &course_id);
+    registry.complete_module(&admin, &learner, &course_id);
+
+    // Learner 2 only finishes one module
+    registry.complete_module(&admin, &learner2, &course_id);
+
+    assert_eq!(badge.get_badge_count(&learner), 1);
+    assert_eq!(badge.get_badge_count(&learner2), 0);
+}
+
+#[test]
+fn test_no_badge_minted_when_badge_nft_not_configured() {
+    // Registry without set_badge_nft — complete_module must not panic
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &admin, &1, &dummy_hash(&env));
+
+    // Should succeed silently — no badge contract configured
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(client.get_progress(&learner, &course_id), 1);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_set_badge_nft_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let fake = Address::generate(&env);
+    let badge_addr = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // A non-admin must not be able to set the badge NFT address
+    client.set_badge_nft(&fake, &badge_addr);
 }

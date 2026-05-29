@@ -11,6 +11,9 @@ repository = "https://github.com/your-org/learnault-contracts"
 crate-type = ["lib", "cdylib"]
 doctest = false
 
+[features]
+testutils = ["soroban-sdk/testutils"]
+
 [dependencies]
 soroban-sdk = { workspace = true }
 
