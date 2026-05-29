@@ -181,7 +181,7 @@ impl RewardPool {
         // 3. Initialize token::Client::new(&env, &Token_Address)
         let token_client = token::Client::new(&env, &token_id);
 
-        // 4. Call token_client.transfer(&donor, &env.current_contract_address(), &amount)
+        // 4. Call token_client.transfer(&donor, env.current_contract_address(), &amount)
         token_client.transfer(&donor, env.current_contract_address(), &amount);
 
         // 5. Emit PoolFunded event
