@@ -12,6 +12,11 @@ crate-type = ["lib", "cdylib"]
 doctest = false
 
 [features]
+# `contract` enables the #[contract]/#[contractimpl] wasm export shims.
+# Must be passed explicitly when building the standalone wasm artifact.
+# Dependents (e.g. course-registry) must NOT enable this feature to avoid
+# duplicate symbol errors at link time.
+contract = []
 testutils = ["soroban-sdk/testutils"]
 
 [dependencies]

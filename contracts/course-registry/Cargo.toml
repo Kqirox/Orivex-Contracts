@@ -13,9 +13,11 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+# default-features = false ensures the `contract` feature is NOT enabled,
+# so badge-nft's wasm export shims are excluded and won't clash at link time.
 badge-nft = { path = "../badge-nft", default-features = false }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-badge-nft = { path = "../badge-nft", features = ["testutils"] }
-
+# Tests need `contract` (for env.register(BadgeNFT, ())) and `testutils`.
+badge-nft = { path = "../badge-nft", default-features = false, features = ["contract", "testutils"] }
