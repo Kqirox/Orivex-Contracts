@@ -102,6 +102,36 @@ impl RewardPool {
         SpenderAdded { spender }.publish(&env);
     }
 
+    /// Toggles the pause state of the contract (emergency circuit breaker).
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `status` - The pause status (true = paused, false = unpaused)
+    ///
+    /// # Panics
+    /// * If contract is not initialized
+    /// * If admin does not match stored admin
+    /// * If admin authentication fails
+    pub fn set_pause(env: Env, admin: Address, status: bool) {
+        // 1. Fetch 'Admin' address from Instance storage
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        // 2. Assert admin == stored_admin
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        // 3. admin.require_auth()
+        admin.require_auth();
+
+        // 4. Store pause status in Instance storage
+        env.storage().instance().set(&DataKey::IsPaused, &status);
+    }
+
     /// Distributes rewards from the pool to a learner.
     ///
     /// # Arguments
@@ -115,6 +145,14 @@ impl RewardPool {
     /// * If caller is not an authorized spender
     /// * If contract is not initialized
     pub fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128) {
+        // 0. Check if contract is paused
+        let is_paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false);
+        assert!(!is_paused, "Contract is paused");
+
         // 1. caller.require_auth()
         caller.require_auth();
 
