@@ -1,0 +1,19 @@
+[package]
+name = "governance"
+version = "0.1.0"
+edition = "2021"
+authors = ["Orivex Team"]
+description = "Governance contract for the Orivex platform"
+license = "MIT"
+repository = "https://github.com/Kqirox/orivex-contracts"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+badge-nft = { path = "../badge-nft" }
