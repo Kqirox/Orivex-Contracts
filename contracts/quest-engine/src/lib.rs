@@ -48,16 +48,48 @@ pub struct QuestEngineContract;
 
 #[contractimpl]
 impl QuestEngineContract {
-    /// Initializes the QuestEngine contract with the token address.
-    pub fn initialize(env: Env, token: Address, reward_pool: Address) {
+    /// Initializes the QuestEngine contract with the token address and admin.
+    pub fn initialize(env: Env, admin: Address, token: Address, reward_pool: Address) {
         if env.storage().instance().has(&DataKey::Token) {
             panic!("Already initialized");
         }
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
         env.storage()
             .instance()
             .set(&DataKey::RewardPool, &reward_pool);
         env.storage().instance().set(&DataKey::QuestCounter, &0u32);
+    }
+
+    /// Toggles the pause state of the contract (emergency circuit breaker).
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `status` - The pause status (true = paused, false = unpaused)
+    ///
+    /// # Panics
+    /// * If contract is not initialized
+    /// * If admin does not match stored admin
+    /// * If admin authentication fails
+    pub fn set_pause(env: Env, admin: Address, status: bool) {
+        // 1. Fetch 'Admin' address from Instance storage
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        // 2. Assert admin == stored_admin
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        // 3. admin.require_auth()
+        admin.require_auth();
+
+        // 4. Store pause status in Instance storage
+        env.storage().instance().set(&DataKey::IsPaused, &status);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
@@ -180,6 +212,14 @@ impl QuestEngineContract {
         quest_id: u32,
         approve: bool,
     ) {
+        // 0. Check if contract is paused
+        let is_paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false);
+        assert!(!is_paused, "Contract is paused");
+
         // 1. employer.require_auth()
         employer.require_auth();
 
