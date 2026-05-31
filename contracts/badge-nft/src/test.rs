@@ -239,6 +239,60 @@ fn test_mint_badge_timestamp_is_set() {
     assert_eq!(badge.minted_at, 0);
 }
 
+// ── revoke_badge Tests ───────────────────────────────────────────────────────
+
+#[test]
+fn test_revoke_badge_success() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.mint_badge(&registry, &learner, &1);
+
+    // Verify badge exists
+    assert_eq!(client.get_badge_count(&learner), 1);
+
+    // Revoke badge
+    client.revoke_badge(&registry, &learner, &1);
+
+    // Verify badge is removed
+    assert_eq!(client.get_badge_count(&learner), 0);
+}
+
+#[test]
+fn test_revoke_badge_emits_event() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.mint_badge(&registry, &learner, &1);
+
+    client.revoke_badge(&registry, &learner, &1);
+
+    let last_event = env.events().all().last().unwrap();
+    let expected_topic: Vec<Val> =
+        (Symbol::new(&env, "badge_revoked"), &learner, 1u32).into_val(&env);
+
+    assert_eq!(last_event.1, expected_topic);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the authorized registry")]
+fn test_revoke_badge_unauthorized_caller() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let unauthorized_caller = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.mint_badge(&registry, &learner, &1);
+
+    // Try to revoke with unauthorized caller - should panic
+    client.revoke_badge(&unauthorized_caller, &learner, &1);
+}
+
 // ── get_badges Tests ─────────────────────────────────────────────────────────
 
 #[test]
