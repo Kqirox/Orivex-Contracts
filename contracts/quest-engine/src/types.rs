@@ -39,4 +39,5 @@ pub enum DataKey {
     Submission(Address, u32), // (Submitter Address, Quest ID)
     Token,
     QuestCounter,
+    RewardPool,
 }
