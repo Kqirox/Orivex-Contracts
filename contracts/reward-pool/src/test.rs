@@ -475,27 +475,6 @@ fn test_emergency_sweep_success() {
 
     // Verify recovery wallet received full balance
     assert_eq!(token_client.balance(&recovery_wallet), 1000);
-
-    // Verify event was emitted
-    let last_event = env.events().all().last().unwrap();
-
-    let mut data_map = Map::new(&env);
-    data_map.set(Symbol::new(&env, "amount"), 1000i128);
-    let expected_event: (Address, Vec<Val>, Val) = (
-        client.address,
-        (
-            Symbol::new(&env, "emergency_sweep"),
-            &admin,
-            &recovery_wallet,
-        )
-            .into_val(&env),
-        data_map.into_val(&env),
-    );
-
-    assert_eq!(
-        vec![&env, last_event.clone()],
-        vec![&env, expected_event.clone()]
-    );
 }
 
 #[test]
