@@ -1,5 +1,12 @@
 [workspace]
-members = ["course-registry", "quest-engine", "reward-pool", "badge-nft", "governance"]
+members = [
+    "course-registry",
+    "quest-engine",
+    "reward-pool",
+    "badge-nft",
+    "governance",
+    "stake-vault",
+]
 resolver = "2"
 
 [workspace.dependencies]
