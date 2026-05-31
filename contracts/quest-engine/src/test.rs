@@ -10,7 +10,13 @@ use crate::{QuestEngineContract, QuestEngineContractClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn setup() -> (Env, QuestEngineContractClient<'static>, Address, Address, Address) {
+fn setup() -> (
+    Env,
+    QuestEngineContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
 
