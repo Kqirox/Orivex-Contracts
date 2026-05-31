@@ -60,7 +60,7 @@ impl StakeVault {
             .expect("Not initialized");
         let token_client = token::Client::new(&env, &token_id);
 
-        token_client.transfer(&user, &env.current_contract_address(), &amount);
+        token_client.transfer(&user, env.current_contract_address(), &amount);
 
         let now = env.ledger().timestamp();
 
