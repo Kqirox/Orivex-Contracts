@@ -483,7 +483,12 @@ fn test_emergency_sweep_success() {
     data_map.set(Symbol::new(&env, "amount"), 1000i128);
     let expected_event: (Address, Vec<Val>, Val) = (
         client.address,
-        (Symbol::new(&env, "emergency_sweep"), &admin, &recovery_wallet).into_val(&env),
+        (
+            Symbol::new(&env, "emergency_sweep"),
+            &admin,
+            &recovery_wallet,
+        )
+            .into_val(&env),
         data_map.into_val(&env),
     );
 
