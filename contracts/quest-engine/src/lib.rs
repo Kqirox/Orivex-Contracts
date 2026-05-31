@@ -34,17 +34,29 @@ pub struct SubmissionReviewed {
     pub approved: bool,
 }
 
+#[contractevent]
+pub struct QuestRefunded {
+    #[topic]
+    pub employer: Address,
+    #[topic]
+    pub quest_id: u32,
+    pub amount: i128,
+}
+
 #[contract]
 pub struct QuestEngineContract;
 
 #[contractimpl]
 impl QuestEngineContract {
     /// Initializes the QuestEngine contract with the token address.
-    pub fn initialize(env: Env, token: Address) {
+    pub fn initialize(env: Env, token: Address, reward_pool: Address) {
         if env.storage().instance().has(&DataKey::Token) {
             panic!("Already initialized");
         }
         env.storage().instance().set(&DataKey::Token, &token);
+        env.storage()
+            .instance()
+            .set(&DataKey::RewardPool, &reward_pool);
         env.storage().instance().set(&DataKey::QuestCounter, &0u32);
     }
 
@@ -201,13 +213,19 @@ impl QuestEngineContract {
                 .get(&DataKey::Token)
                 .expect("Not initialized");
             let token_client = token::Client::new(&env, &token_address);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &learner,
-                &quest.reward_amount,
-            );
 
-            // b. Update submission status to Approved.
+            let fee = (quest.reward_amount * 15) / 100;
+            let learner_amount = quest.reward_amount - fee;
+
+            let reward_pool: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::RewardPool)
+                .expect("Not initialized");
+
+            token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
+            token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
+
             submission.status = SubmissionStatus::Approved;
         } else {
             // 5. If approve == false:
@@ -224,6 +242,47 @@ impl QuestEngineContract {
             learner,
             quest_id,
             approved: approve,
+        }
+        .publish(&env);
+    }
+
+    pub fn refund_quest(env: Env, employer: Address, quest_id: u32) {
+        employer.require_auth();
+
+        let mut quest: Quest = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Quest(quest_id))
+            .expect("Quest not found");
+
+        if quest.employer != employer {
+            panic!("Unauthorized");
+        }
+        if !quest.active {
+            panic!("Quest already inactive");
+        }
+
+        quest.active = false;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Quest(quest_id), &quest);
+
+        let token_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+        let token_client = token::Client::new(&env, &token_address);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &employer,
+            &quest.reward_amount,
+        );
+
+        QuestRefunded {
+            employer,
+            quest_id,
+            amount: quest.reward_amount,
         }
         .publish(&env);
     }

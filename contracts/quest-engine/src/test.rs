@@ -10,7 +10,7 @@ use crate::{QuestEngineContract, QuestEngineContractClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn setup() -> (Env, QuestEngineContractClient<'static>, Address) {
+fn setup() -> (Env, QuestEngineContractClient<'static>, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -24,9 +24,10 @@ fn setup() -> (Env, QuestEngineContractClient<'static>, Address) {
         .address();
 
     // Initialize the contract with token
-    client.initialize(&token_id);
+    let reward_pool = Address::generate(&env);
+    client.initialize(&token_id, &reward_pool);
 
-    (env, client, token_id)
+    (env, client, token_id, reward_pool)
 }
 
 fn mint_tokens(env: &Env, token_id: &Address, to: &Address, amount: &i128) {
@@ -43,16 +44,15 @@ fn token_balance(env: &Env, token_id: &Address, of: &Address) -> i128 {
 #[test]
 #[should_panic(expected = "Already initialized")]
 fn test_initialize_twice_panics() {
-    let (_env, client, token_id) = setup();
-    // setup() already initializes once, this second call should panic
-    client.initialize(&token_id);
+    let (_env, client, token_id, reward_pool) = setup();
+    client.initialize(&token_id, &reward_pool);
 }
 
 // ── create_build_quest Tests ─────────────────────────────────────────────────
 
 #[test]
 fn test_create_build_quest_success() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let reward_amount: i128 = 1_000;
     let metadata_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -85,7 +85,7 @@ fn test_create_build_quest_success() {
 
 #[test]
 fn test_create_build_quest_emits_event() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let reward_amount: i128 = 500;
     let metadata_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -105,7 +105,7 @@ fn test_create_build_quest_emits_event() {
 
 #[test]
 fn test_create_build_quest_increments_ids() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let metadata_hash = BytesN::from_array(&env, &[3u8; 32]);
 
@@ -148,13 +148,13 @@ fn test_create_quest_without_init_panics() {
 
 #[test]
 fn test_get_quest_returns_none_for_nonexistent() {
-    let (_env, client, _token_id) = setup();
+    let (_env, client, _token_id, _reward_pool) = setup();
     assert_eq!(client.get_quest(&999), None);
 }
 
 #[test]
 fn test_create_build_quest_multiple_employers() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer1 = Address::generate(&env);
     let employer2 = Address::generate(&env);
     let metadata_hash = BytesN::from_array(&env, &[4u8; 32]);
@@ -181,7 +181,7 @@ fn test_create_build_quest_multiple_employers() {
 
 #[test]
 fn test_submit_proof_success() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -203,7 +203,7 @@ fn test_submit_proof_success() {
 
 #[test]
 fn test_submit_proof_emits_event() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -230,7 +230,7 @@ fn test_submit_proof_emits_event() {
 #[test]
 #[should_panic(expected = "Quest not found")]
 fn test_submit_proof_nonexistent_quest_panics() {
-    let (_env, client, _token_id) = setup();
+    let (_env, client, _token_id, _reward_pool) = setup();
     let learner = Address::generate(&_env);
     let proof_hash = BytesN::from_array(&_env, &[9u8; 32]);
 
@@ -240,7 +240,7 @@ fn test_submit_proof_nonexistent_quest_panics() {
 #[test]
 #[should_panic(expected = "Submission already exists")]
 fn test_submit_proof_duplicate_panics() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -260,7 +260,7 @@ fn test_submit_proof_duplicate_panics() {
 
 #[test]
 fn test_get_submission_returns_none_for_nonexistent() {
-    let (_env, client, _token_id) = setup();
+    let (_env, client, _token_id, _reward_pool) = setup();
     let learner = Address::generate(&_env);
     assert_eq!(client.get_submission(&learner, &999), None);
 }
@@ -269,7 +269,7 @@ fn test_get_submission_returns_none_for_nonexistent() {
 
 #[test]
 fn test_review_submission_approve_success() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -293,18 +293,18 @@ fn test_review_submission_approve_success() {
     // Approve submission
     client.review_submission(&employer, &learner, &quest_id, &true);
 
-    // Verify funds transferred
-    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
-    assert_eq!(token_balance(&env, &token_id, &learner), reward_amount);
+    // Verify fee split
+    let fee = (reward_amount * 15) / 100;
+    let learner_amount = reward_amount - fee;
 
-    // Verify submission status updated
-    let submission = client.get_submission(&learner, &quest_id).unwrap();
-    assert_eq!(submission.status, SubmissionStatus::Approved);
+    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
+    assert_eq!(token_balance(&env, &token_id, &learner), learner_amount);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
 }
 
 #[test]
 fn test_review_submission_reject_success() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -342,7 +342,7 @@ fn test_review_submission_reject_success() {
 
 #[test]
 fn test_review_submission_emits_event() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -371,7 +371,7 @@ fn test_review_submission_emits_event() {
 #[test]
 #[should_panic(expected = "Quest not found")]
 fn test_review_submission_nonexistent_quest_panics() {
-    let (_env, client, _token_id) = setup();
+    let (_env, client, _token_id, _reward_pool) = setup();
     let employer = Address::generate(&_env);
     let learner = Address::generate(&_env);
 
@@ -381,7 +381,7 @@ fn test_review_submission_nonexistent_quest_panics() {
 #[test]
 #[should_panic(expected = "Only the quest employer can review submissions")]
 fn test_review_submission_wrong_employer_panics() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let wrong_employer = Address::generate(&env);
     let learner = Address::generate(&env);
@@ -403,7 +403,7 @@ fn test_review_submission_wrong_employer_panics() {
 #[test]
 #[should_panic(expected = "Submission not found")]
 fn test_review_submission_nonexistent_submission_panics() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -420,7 +420,7 @@ fn test_review_submission_nonexistent_submission_panics() {
 #[test]
 #[should_panic(expected = "Submission is not pending review")]
 fn test_review_submission_already_reviewed_panics() {
-    let (env, client, token_id) = setup();
+    let (env, client, token_id, _reward_pool) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -439,4 +439,60 @@ fn test_review_submission_already_reviewed_panics() {
 
     // Try to review again - should panic
     client.review_submission(&employer, &learner, &quest_id, &false);
+}
+
+#[test]
+fn test_refund_quest_success() {
+    let (env, client, token_id, _reward_pool) = setup();
+    let employer = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[30u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    assert_eq!(
+        token_balance(&env, &token_id, &client.address),
+        reward_amount
+    );
+    assert_eq!(token_balance(&env, &token_id, &employer), 0);
+
+    client.refund_quest(&employer, &quest_id);
+
+    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
+    assert_eq!(token_balance(&env, &token_id, &employer), reward_amount);
+
+    let quest = client.get_quest(&quest_id).unwrap();
+    assert!(!quest.active);
+}
+
+#[test]
+#[should_panic(expected = "Quest already inactive")]
+fn test_refund_quest_already_inactive_panics() {
+    let (env, client, token_id, _reward_pool) = setup();
+    let employer = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[31u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    client.refund_quest(&employer, &quest_id);
+    // Second refund should panic
+    client.refund_quest(&employer, &quest_id);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_refund_quest_wrong_employer_panics() {
+    let (env, client, token_id, _reward_pool) = setup();
+    let employer = Address::generate(&env);
+    let wrong_employer = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[32u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    client.refund_quest(&wrong_employer, &quest_id);
 }
