@@ -1,12 +1,25 @@
 #![no_std]
-use badge_nft::BadgeNFTClient;
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol};
+use soroban_sdk::{
+    contract, contractclient, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec,
+};
 
 pub mod types;
 
 pub use types::{DataKey, Proposal};
 
 const BADGE_NFT_KEY: Symbol = symbol_short!("badge");
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Badge {
+    pub course_id: u32,
+    pub minted_at: u64,
+}
+
+#[contractclient(name = "BadgeNFTClient")]
+pub trait BadgeNFTInterface {
+    fn get_badges(env: Env, learner: Address) -> Vec<Badge>;
+}
 
 #[contract]
 pub struct Governance;
