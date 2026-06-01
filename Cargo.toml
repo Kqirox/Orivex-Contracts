@@ -4,6 +4,7 @@ members = [
   "contracts/course-registry",
   "contracts/reward-pool",
   "contracts/quest-engine",
+  "contracts/badge-nft",
   "contracts/governance"
 ]
 
