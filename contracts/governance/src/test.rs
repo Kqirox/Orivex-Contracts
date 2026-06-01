@@ -1,6 +1,7 @@
-#![cfg(test)]
-
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger},
+    Address, BytesN, Env,
+};
 
 use badge_nft::{BadgeNFT, BadgeNFTClient};
 
@@ -92,4 +93,168 @@ fn test_cast_vote_prevents_double_voting() {
 
     governance_client.cast_vote(&voter, &1, &true);
     governance_client.cast_vote(&voter, &1, &false);
+}
+
+#[test]
+fn test_execute_proposal_success() {
+    let (env, governance_client, badge_client) = setup();
+    let badge_admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+
+    governance_client.initialize(&badge_client.address);
+    badge_client.initialize(&badge_admin);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+
+    // Cast votes in favor
+    badge_client.mint_badge(&badge_admin, &voter, &101);
+    badge_client.mint_badge(&badge_admin, &voter, &102);
+    governance_client.cast_vote(&voter, &1, &true);
+
+    // Move time past end_time
+    env.ledger().with_mut(|li| li.timestamp = 1_001);
+
+    governance_client.execute_proposal(&1);
+
+    let proposal = governance_client.get_proposal(&1);
+    assert!(proposal.executed);
+    assert_eq!(proposal.votes_for, 2);
+    assert_eq!(proposal.votes_against, 0);
+}
+
+#[test]
+#[should_panic(expected = "Voting still active")]
+fn test_execute_proposal_voting_still_active() {
+    let (env, governance_client, badge_client) = setup();
+    let badge_admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+
+    governance_client.initialize(&badge_client.address);
+    badge_client.initialize(&badge_admin);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+
+    // Cast votes in favor
+    badge_client.mint_badge(&badge_admin, &voter, &101);
+    governance_client.cast_vote(&voter, &1, &true);
+
+    // Time is still before end_time (1_000)
+    env.ledger().with_mut(|li| li.timestamp = 999);
+
+    governance_client.execute_proposal(&1);
+}
+
+#[test]
+#[should_panic(expected = "Proposal rejected")]
+fn test_execute_proposal_rejected() {
+    let (env, governance_client, badge_client) = setup();
+    let badge_admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let voter_for = Address::generate(&env);
+    let voter_against = Address::generate(&env);
+
+    governance_client.initialize(&badge_client.address);
+    badge_client.initialize(&badge_admin);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+
+    // Cast votes: 1 for, 2 against
+    badge_client.mint_badge(&badge_admin, &voter_for, &101);
+    governance_client.cast_vote(&voter_for, &1, &true);
+
+    badge_client.mint_badge(&badge_admin, &voter_against, &201);
+    badge_client.mint_badge(&badge_admin, &voter_against, &202);
+    governance_client.cast_vote(&voter_against, &1, &false);
+
+    // Move time past end_time
+    env.ledger().with_mut(|li| li.timestamp = 1_001);
+
+    governance_client.execute_proposal(&1);
+}
+
+#[test]
+#[should_panic(expected = "Proposal rejected")]
+fn test_execute_proposal_tied_vote() {
+    let (env, governance_client, badge_client) = setup();
+    let badge_admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let voter_for = Address::generate(&env);
+    let voter_against = Address::generate(&env);
+
+    governance_client.initialize(&badge_client.address);
+    badge_client.initialize(&badge_admin);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+
+    // Cast votes: 2 for, 2 against (tie)
+    badge_client.mint_badge(&badge_admin, &voter_for, &101);
+    badge_client.mint_badge(&badge_admin, &voter_for, &102);
+    governance_client.cast_vote(&voter_for, &1, &true);
+
+    badge_client.mint_badge(&badge_admin, &voter_against, &201);
+    badge_client.mint_badge(&badge_admin, &voter_against, &202);
+    governance_client.cast_vote(&voter_against, &1, &false);
+
+    // Move time past end_time
+    env.ledger().with_mut(|li| li.timestamp = 1_001);
+
+    governance_client.execute_proposal(&1);
+}
+
+#[test]
+#[should_panic(expected = "Already executed")]
+fn test_execute_proposal_already_executed() {
+    let (env, governance_client, badge_client) = setup();
+    let badge_admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+
+    governance_client.initialize(&badge_client.address);
+    badge_client.initialize(&badge_admin);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+
+    // Cast votes in favor
+    badge_client.mint_badge(&badge_admin, &voter, &101);
+    governance_client.cast_vote(&voter, &1, &true);
+
+    // Move time past end_time
+    env.ledger().with_mut(|li| li.timestamp = 1_001);
+
+    governance_client.execute_proposal(&1);
+    governance_client.execute_proposal(&1); // Try to execute again
+}
+
+#[test]
+fn test_execute_proposal_emits_event() {
+    let (env, governance_client, badge_client) = setup();
+    let badge_admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+
+    governance_client.initialize(&badge_client.address);
+    badge_client.initialize(&badge_admin);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+
+    // Cast votes in favor
+    badge_client.mint_badge(&badge_admin, &voter, &101);
+    governance_client.cast_vote(&voter, &1, &true);
+
+    // Move time past end_time
+    env.ledger().with_mut(|li| li.timestamp = 1_001);
+
+    governance_client.execute_proposal(&1);
+
+    // Verify event was emitted
+    assert_eq!(env.events().all().len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "Proposal not found")]
+fn test_execute_proposal_nonexistent() {
+    let (env, governance_client, badge_client) = setup();
+
+    governance_client.initialize(&badge_client.address);
+
+    // Move time past end_time
+    env.ledger().with_mut(|li| li.timestamp = 1_001);
+
+    governance_client.execute_proposal(&999);
 }

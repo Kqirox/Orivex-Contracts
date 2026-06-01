@@ -16,4 +16,5 @@ pub enum DataKey {
     Progress(Address, u32),
     CourseCount,
     Admin,
+    BadgeNftAddress,
 }

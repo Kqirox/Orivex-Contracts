@@ -4,6 +4,8 @@ use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 pub mod types;
 use types::{Course, DataKey};
 
+use badge_nft::BadgeNFTClient;
+
 #[contract]
 pub struct CourseRegistry;
 
@@ -49,6 +51,26 @@ impl CourseRegistry {
             panic!("Already initialized");
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// Registers the BadgeNFT contract address so the registry can mint badges on completion.
+    /// Only callable by the Protocol Admin.
+    pub fn set_badge_nft_address(env: Env, admin: Address, badge_nft_address: Address) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        env.storage()
+            .instance()
+            .set(&DataKey::BadgeNftAddress, &badge_nft_address);
     }
 
     /// Registers a new course on-chain.
@@ -281,11 +303,23 @@ impl CourseRegistry {
 
         // 8. Emit ModuleCompleted event
         ModuleCompleted {
-            learner,
+            learner: learner.clone(),
             course_id: id,
             new_progress,
         }
         .publish(&env);
+
+        // 9. If the learner just finished the final module, mint their soulbound badge
+        if new_progress == course.total_modules {
+            if let Some(badge_nft_address) = env
+                .storage()
+                .instance()
+                .get::<DataKey, Address>(&DataKey::BadgeNftAddress)
+            {
+                let badge_nft = BadgeNFTClient::new(&env, &badge_nft_address);
+                badge_nft.mint_badge(&env.current_contract_address(), &learner, &id);
+            }
+        }
     }
 }
 
