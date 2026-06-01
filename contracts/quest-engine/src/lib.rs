@@ -3,7 +3,14 @@
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
-use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
+use soroban_sdk::{
+    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env,
+};
+
+#[contractclient(name = "StakeVaultClient")]
+pub trait StakeVaultInterface {
+    fn get_multiplier(env: Env, learner: Address) -> u32;
+}
 
 #[contractevent]
 pub struct QuestCreated {
@@ -49,7 +56,13 @@ pub struct QuestEngineContract;
 #[contractimpl]
 impl QuestEngineContract {
     /// Initializes the QuestEngine contract with the token address and admin.
-    pub fn initialize(env: Env, admin: Address, token: Address, reward_pool: Address) {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        token: Address,
+        reward_pool: Address,
+        stake_vault: Address,
+    ) {
         if env.storage().instance().has(&DataKey::Token) {
             panic!("Already initialized");
         }
@@ -59,6 +72,9 @@ impl QuestEngineContract {
         env.storage()
             .instance()
             .set(&DataKey::RewardPool, &reward_pool);
+        env.storage()
+            .instance()
+            .set(&DataKey::StakeVault, &stake_vault);
         env.storage().instance().set(&DataKey::QuestCounter, &0u32);
     }
 
@@ -255,7 +271,28 @@ impl QuestEngineContract {
             let token_client = token::Client::new(&env, &token_address);
 
             let fee = (quest.reward_amount * 15) / 100;
-            let learner_amount = quest.reward_amount - fee;
+            let base_learner_amount = quest.reward_amount - fee;
+
+            // Fetch stake vault and get multiplier
+            let stake_vault_address: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::StakeVault)
+                .expect("Not initialized");
+            let stake_vault_client = StakeVaultClient::new(&env, &stake_vault_address);
+            let multiplier = stake_vault_client.get_multiplier(&learner);
+
+            // Apply multiplier (basis points: 100 = 1.0x, 120 = 1.2x, etc.)
+            // Note: The boosted amount is calculated but capped to base_learner_amount
+            // since the quest only has base_learner_amount available after fees.
+            // In production, employers should fund quests accounting for potential multipliers,
+            // or the boost should come from a separate reward pool contract with proper authorization.
+            let calculated_boost = (base_learner_amount * multiplier as i128) / 100;
+            let learner_amount = if calculated_boost > base_learner_amount {
+                base_learner_amount // Cap to available funds
+            } else {
+                calculated_boost
+            };
 
             let reward_pool: Address = env
                 .storage()
@@ -328,4 +365,5 @@ impl QuestEngineContract {
     }
 }
 
+#[cfg(test)]
 mod test;

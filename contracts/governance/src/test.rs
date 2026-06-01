@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 use badge_nft::{BadgeNFT, BadgeNFTClient};
