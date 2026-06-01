@@ -3,7 +3,19 @@
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
-use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
+use soroban_sdk::{
+    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env,
+};
+
+#[contractclient(name = "StakeVaultClient")]
+pub trait StakeVaultInterface {
+    fn get_multiplier(env: Env, learner: Address) -> u32;
+}
+
+#[contractclient(name = "RewardPoolClient")]
+pub trait RewardPoolInterface {
+    fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128);
+}
 
 #[contractevent]
 pub struct QuestCreated {
@@ -38,6 +50,17 @@ pub struct SubmissionReviewed {
 pub struct QuestRefunded {
     #[topic]
     pub employer: Address,
+    #[topic]
+    pub quest_id: u32,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct ExploreQuestVerified {
+    #[topic]
+    pub admin: Address,
+    #[topic]
+    pub learner: Address,
     #[topic]
     pub quest_id: u32,
     pub amount: i128,
@@ -142,6 +165,74 @@ impl QuestEngineContract {
         // 7. Emit QuestCreated event.
         QuestCreated {
             employer,
+            quest_id,
+            reward_amount,
+        }
+        .publish(&env);
+
+        quest_id
+    }
+
+    /// Creates an Explore Quest that will be funded by the RewardPool.
+    /// Explore Quests are for off-chain actions verified by the admin.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `reward_amount` - The amount to be paid from RewardPool upon verification
+    /// * `metadata_hash` - Hash of the quest metadata (description, requirements, etc.)
+    ///
+    /// # Returns
+    /// The ID of the newly created quest
+    ///
+    /// # Panics
+    /// * If admin authentication fails
+    /// * If admin does not match stored admin
+    /// * If contract is not initialized
+    pub fn create_explore_quest(
+        env: Env,
+        admin: Address,
+        reward_amount: i128,
+        metadata_hash: BytesN<32>,
+    ) -> u32 {
+        // 1. admin.require_auth()
+        admin.require_auth();
+
+        // 2. Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        // 3. Increment Quest ID counter
+        let mut quest_id: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::QuestCounter)
+            .unwrap_or(0);
+        quest_id += 1;
+        env.storage()
+            .instance()
+            .set(&DataKey::QuestCounter, &quest_id);
+
+        // 4. Create Quest struct with QuestType::Explore
+        let quest = Quest {
+            employer: admin.clone(),
+            reward_amount,
+            quest_type: QuestType::Explore,
+            metadata_hash,
+            active: true,
+        };
+
+        // 5. Save to Persistent storage
+        env.storage()
+            .persistent()
+            .set(&DataKey::Quest(quest_id), &quest);
+
+        // 6. Emit QuestCreated event
+        QuestCreated {
+            employer: admin,
             quest_id,
             reward_amount,
         }
@@ -326,6 +417,71 @@ impl QuestEngineContract {
         }
         .publish(&env);
     }
+
+    /// Verifies an Explore Quest completion and triggers payout from RewardPool.
+    /// Only the admin can call this function to reward off-chain actions.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `learner` - The learner address to receive the reward
+    /// * `quest_id` - The ID of the Explore Quest to verify
+    ///
+    /// # Panics
+    /// * If admin authentication fails
+    /// * If admin does not match stored admin
+    /// * If quest is not found
+    /// * If quest type is not Explore
+    /// * If contract is not initialized
+    pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
+        // 1. admin.require_auth()
+        admin.require_auth();
+
+        // 2. Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        // 3. Get quest
+        let quest: Quest = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Quest(quest_id))
+            .expect("Quest not found");
+
+        // 4. Assert quest type is Explore
+        assert!(
+            quest.quest_type == QuestType::Explore,
+            "Not an Explore quest"
+        );
+
+        // 5. Get reward pool address and create client
+        let reward_pool_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::RewardPool)
+            .expect("Not initialized");
+        let reward_pool_client = RewardPoolClient::new(&env, &reward_pool_address);
+
+        // 6. Distribute reward from RewardPool
+        reward_pool_client.distribute_reward(
+            &env.current_contract_address(),
+            &learner,
+            &quest.reward_amount,
+        );
+
+        // 7. Emit ExploreQuestVerified event
+        ExploreQuestVerified {
+            admin,
+            learner,
+            quest_id,
+            amount: quest.reward_amount,
+        }
+        .publish(&env);
+    }
 }
 
+#[cfg(test)]
 mod test;

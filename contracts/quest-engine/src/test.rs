@@ -1,6 +1,5 @@
-#![cfg(test)]
-
 use soroban_sdk::{
+    contract, contractimpl,
     testutils::{Address as _, Events},
     Address, BytesN, Env,
 };
@@ -502,4 +501,166 @@ fn test_refund_quest_wrong_employer_panics() {
     let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
 
     client.refund_quest(&wrong_employer, &quest_id);
+}
+
+// ── Explore Quest Tests ──────────────────────────────────────────────────────
+
+/// Mock RewardPool contract for testing
+#[contract]
+pub struct MockRewardPool;
+
+#[contractimpl]
+impl MockRewardPool {
+    pub fn distribute_reward(_env: Env, _caller: Address, _learner: Address, _amount: i128) {
+        // Mock implementation - does nothing in tests
+    }
+}
+
+#[test]
+fn test_create_explore_quest_success() {
+    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[60u8; 32]);
+
+    let quest_id = client.create_explore_quest(&admin, &reward_amount, &metadata_hash);
+
+    assert_eq!(quest_id, 1);
+
+    let quest = client.get_quest(&quest_id).unwrap();
+    assert_eq!(quest.employer, admin);
+    assert_eq!(quest.reward_amount, reward_amount);
+    assert_eq!(quest.quest_type, QuestType::Explore);
+    assert_eq!(quest.metadata_hash, metadata_hash);
+    assert!(quest.active);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_create_explore_quest_unauthorized() {
+    let (env, client, _token_id, _reward_pool, _admin) = setup();
+    let unauthorized = Address::generate(&env);
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[61u8; 32]);
+
+    client.create_explore_quest(&unauthorized, &reward_amount, &metadata_hash);
+}
+
+#[test]
+fn test_create_explore_quest_increments_ids() {
+    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let metadata_hash = BytesN::from_array(&env, &[62u8; 32]);
+
+    let id1 = client.create_explore_quest(&admin, &100, &metadata_hash);
+    let id2 = client.create_explore_quest(&admin, &200, &metadata_hash);
+    let id3 = client.create_explore_quest(&admin, &300, &metadata_hash);
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+    assert_eq!(id3, 3);
+
+    for id in [id1, id2, id3] {
+        let quest = client.get_quest(&id).unwrap();
+        assert_eq!(quest.quest_type, QuestType::Explore);
+    }
+}
+
+#[test]
+fn test_verify_explore_quest_success() {
+    let (env, _client, token_id, _reward_pool, admin) = setup();
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[63u8; 32]);
+
+    // Register mock reward pool
+    let mock_reward_pool_id = env.register(MockRewardPool, ());
+
+    // Create a new client with mock reward pool
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &token_id, &mock_reward_pool_id);
+
+    // Create explore quest
+    let quest_id = client.create_explore_quest(&admin, &reward_amount, &metadata_hash);
+
+    // Verify the quest
+    client.verify_explore_quest(&admin, &learner, &quest_id);
+
+    // Just verify it doesn't panic - the mock reward pool doesn't actually transfer tokens
+    let quest = client.get_quest(&quest_id).unwrap();
+    assert_eq!(quest.quest_type, QuestType::Explore);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_verify_explore_quest_unauthorized() {
+    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let unauthorized = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[64u8; 32]);
+
+    let quest_id = client.create_explore_quest(&admin, &reward_amount, &metadata_hash);
+
+    client.verify_explore_quest(&unauthorized, &learner, &quest_id);
+}
+
+#[test]
+#[should_panic(expected = "Quest not found")]
+fn test_verify_explore_quest_nonexistent() {
+    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let learner = Address::generate(&env);
+
+    client.verify_explore_quest(&admin, &learner, &999);
+}
+
+#[test]
+#[should_panic(expected = "Not an Explore quest")]
+fn test_verify_explore_quest_wrong_type() {
+    let (env, client, token_id, _reward_pool, admin) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[65u8; 32]);
+
+    // Create a Build quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Try to verify it as an Explore quest - should panic
+    client.verify_explore_quest(&admin, &learner, &quest_id);
+}
+
+#[test]
+fn test_explore_quest_emits_event() {
+    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[66u8; 32]);
+
+    client.create_explore_quest(&admin, &reward_amount, &metadata_hash);
+
+    let events = env.events().all();
+    assert!(!events.is_empty(), "Expected at least 1 event");
+}
+
+#[test]
+fn test_mixed_quest_types() {
+    let (env, client, token_id, _reward_pool, admin) = setup();
+    let employer = Address::generate(&env);
+    let metadata_hash = BytesN::from_array(&env, &[67u8; 32]);
+
+    // Create Build quest
+    mint_tokens(&env, &token_id, &employer, &1000);
+    let build_id = client.create_build_quest(&employer, &1000, &metadata_hash);
+
+    // Create Explore quest
+    let explore_id = client.create_explore_quest(&admin, &500, &metadata_hash);
+
+    // Verify types
+    let build_quest = client.get_quest(&build_id).unwrap();
+    let explore_quest = client.get_quest(&explore_id).unwrap();
+
+    assert_eq!(build_quest.quest_type, QuestType::Build);
+    assert_eq!(explore_quest.quest_type, QuestType::Explore);
+    assert_eq!(build_quest.employer, employer);
+    assert_eq!(explore_quest.employer, admin);
 }
