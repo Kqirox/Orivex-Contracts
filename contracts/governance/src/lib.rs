@@ -1,6 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec,
+    contract, contractclient, contractevent, contractimpl, contracttype, symbol_short, Address,
+    Env, Symbol, Vec,
 };
 
 pub mod types;
@@ -23,6 +24,13 @@ pub trait BadgeNFTInterface {
 
 #[contract]
 pub struct Governance;
+
+#[contractevent]
+pub struct ProposalExecuted {
+    #[topic]
+    pub proposal_id: u32,
+    pub proposer: Address,
+}
 
 #[contractimpl]
 impl Governance {
@@ -78,6 +86,33 @@ impl Governance {
             .persistent()
             .set(&DataKey::Proposal(proposal_id), &proposal);
         env.storage().persistent().set(&vote_key, &true);
+    }
+
+    /// Executes a proposal if it has passed and the voting period has ended.
+    /// Marks the proposal as executed so the admin knows to action the approved change.
+    pub fn execute_proposal(env: Env, proposal_id: u32) {
+        let mut proposal = Self::get_proposal(env.clone(), proposal_id);
+
+        assert!(
+            env.ledger().timestamp() > proposal.end_time,
+            "Voting still active"
+        );
+        assert!(
+            proposal.votes_for > proposal.votes_against,
+            "Proposal rejected"
+        );
+        assert!(!proposal.executed, "Already executed");
+
+        proposal.executed = true;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+
+        ProposalExecuted {
+            proposal_id,
+            proposer: proposal.proposer,
+        }
+        .publish(&env);
     }
 }
 
