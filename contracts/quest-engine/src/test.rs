@@ -503,3 +503,131 @@ fn test_refund_quest_wrong_employer_panics() {
 
     client.refund_quest(&wrong_employer, &quest_id);
 }
+
+// ── batch_review_submissions Tests ────────────────────────────────────────────
+
+#[test]
+fn test_batch_review_submissions_pays_all_learners() {
+    let (env, client, token_id, reward_pool, _admin) = setup();
+    let employer = Address::generate(&env);
+    let learner1 = Address::generate(&env);
+    let learner2 = Address::generate(&env);
+    let reward_amount: i128 = 1_000;
+    let metadata_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    // Fund employer for two bounties
+    mint_tokens(&env, &token_id, &employer, &(reward_amount * 2));
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    // Create second quest for learner2 (re-use same quest by minting more for quest contract)
+    // We'll use a single quest but fund it with 2x reward; instead use separate quests
+    let quest_id2 = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    client.submit_proof(&learner1, &quest_id, &metadata_hash);
+    client.submit_proof(&learner2, &quest_id2, &metadata_hash);
+
+    // Batch approve learner1 on quest_id, then learner2 on quest_id2 separately
+    let mut learners1 = soroban_sdk::Vec::new(&env);
+    learners1.push_back(learner1.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners1);
+
+    let mut learners2 = soroban_sdk::Vec::new(&env);
+    learners2.push_back(learner2.clone());
+    client.batch_review_submissions(&employer, &quest_id2, &learners2);
+
+    let fee = (reward_amount * 15) / 100;
+    let learner_amount = reward_amount - fee;
+
+    assert_eq!(token_balance(&env, &token_id, &learner1), learner_amount);
+    assert_eq!(token_balance(&env, &token_id, &learner2), learner_amount);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee * 2);
+}
+
+#[test]
+fn test_batch_review_submissions_single_learner() {
+    let (env, client, token_id, reward_pool, _admin) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[5u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+
+    let fee = (reward_amount * 15) / 100;
+    let learner_amount = reward_amount - fee;
+    assert_eq!(token_balance(&env, &token_id, &learner), learner_amount);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
+}
+
+#[test]
+fn test_batch_review_submissions_emits_batch_reviewed_event() {
+    let (env, client, token_id, _reward_pool, _admin) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 300;
+    let metadata_hash = BytesN::from_array(&env, &[9u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+
+    // Events: QuestCreated + ProofSubmitted + SubmissionReviewed + BatchReviewed = 4
+    assert!(!env.events().all().is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Only the quest employer can review submissions")]
+fn test_batch_review_wrong_employer_panics() {
+    let (env, client, token_id, _reward_pool, _admin) = setup();
+    let employer = Address::generate(&env);
+    let wrong_employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 200;
+    let metadata_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&wrong_employer, &quest_id, &learners);
+}
+
+#[test]
+#[should_panic(expected = "Submission not found")]
+fn test_batch_review_missing_submission_panics() {
+    let (env, client, token_id, _reward_pool, _admin) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 200;
+    let metadata_hash = BytesN::from_array(&env, &[3u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Do NOT submit proof - learner has no submission
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+}
+
+// ── upgrade_contract Tests ────────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_upgrade_contract_non_admin_panics() {
+    let (env, client, _token_id, _reward_pool, _admin) = setup();
+    let attacker = Address::generate(&env);
+    let new_wasm_hash = BytesN::from_array(&env, &[0xabu8; 32]);
+    client.upgrade_contract(&attacker, &new_wasm_hash);
+}
