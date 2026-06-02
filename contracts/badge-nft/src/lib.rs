@@ -26,15 +26,22 @@ pub struct BadgeMinted {
     pub minted_at: u64,
 }
 
+#[contractevent]
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: soroban_sdk::BytesN<32>,
+}
+
 // The actual contract struct and implementation are only compiled when building
 // the badge-nft wasm itself (default feature). Dependents disable this feature
 // to avoid duplicate symbol errors at link time.
 #[cfg(feature = "contract")]
 mod contract_impl {
-    use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
+    use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 
     use crate::types::{Badge, DataKey};
-    use crate::BadgeMinted;
+    use crate::{BadgeMinted, ContractUpgraded};
 
     #[contract]
     pub struct BadgeNFT;
@@ -126,6 +133,27 @@ mod contract_impl {
                 }
             }
             false
+        }
+
+        /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+        pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+            admin.require_auth();
+
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Not initialized");
+            assert!(admin == stored_admin, "Unauthorized");
+
+            env.deployer()
+                .update_current_contract_wasm(new_wasm_hash.clone());
+
+            ContractUpgraded {
+                admin,
+                new_wasm_hash,
+            }
+            .publish(&env);
         }
     }
 }
