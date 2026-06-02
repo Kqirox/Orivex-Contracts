@@ -677,7 +677,7 @@ fn test_review_submission_with_80_multiplier() {
 
 #[test]
 fn test_batch_review_submissions_pays_all_learners() {
-    let (env, client, token_id, reward_pool, _admin) = setup();
+    let (env, client, token_id, reward_pool, _admin, _stake_vault_id) = setup();
     let employer = Address::generate(&env);
     let learner1 = Address::generate(&env);
     let learner2 = Address::generate(&env);
@@ -713,7 +713,7 @@ fn test_batch_review_submissions_pays_all_learners() {
 
 #[test]
 fn test_batch_review_submissions_single_learner() {
-    let (env, client, token_id, reward_pool, _admin) = setup();
+    let (env, client, token_id, reward_pool, _admin, _stake_vault_id) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 500;
@@ -735,7 +735,7 @@ fn test_batch_review_submissions_single_learner() {
 
 #[test]
 fn test_batch_review_submissions_emits_batch_reviewed_event() {
-    let (env, client, token_id, _reward_pool, _admin) = setup();
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 300;
@@ -756,7 +756,7 @@ fn test_batch_review_submissions_emits_batch_reviewed_event() {
 #[test]
 #[should_panic(expected = "Only the quest employer can review submissions")]
 fn test_batch_review_wrong_employer_panics() {
-    let (env, client, token_id, _reward_pool, _admin) = setup();
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
     let employer = Address::generate(&env);
     let wrong_employer = Address::generate(&env);
     let learner = Address::generate(&env);
@@ -775,7 +775,7 @@ fn test_batch_review_wrong_employer_panics() {
 #[test]
 #[should_panic(expected = "Submission not found")]
 fn test_batch_review_missing_submission_panics() {
-    let (env, client, token_id, _reward_pool, _admin) = setup();
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 200;
@@ -795,7 +795,7 @@ fn test_batch_review_missing_submission_panics() {
 #[test]
 #[should_panic(expected = "Unauthorized")]
 fn test_upgrade_contract_non_admin_panics() {
-    let (env, client, _token_id, _reward_pool, _admin) = setup();
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
     let attacker = Address::generate(&env);
     let new_wasm_hash = BytesN::from_array(&env, &[0xabu8; 32]);
     client.upgrade_contract(&attacker, &new_wasm_hash);

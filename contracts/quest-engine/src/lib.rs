@@ -4,7 +4,7 @@ pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
 use soroban_sdk::{
-    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec
+    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
 };
 
 #[contractclient(name = "StakeVaultClient")]
@@ -380,7 +380,7 @@ impl QuestEngineContract {
         .publish(&env);
     }
 
-     /// Approves multiple learner submissions in a single transaction.
+    /// Approves multiple learner submissions in a single transaction.
     /// Executes the full fee-adjusted payout for each learner.
     pub fn batch_review_submissions(
         env: Env,
