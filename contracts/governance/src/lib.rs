@@ -1,6 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec,
+    contract, contractclient, contractevent, contractimpl, contracttype, symbol_short, Address,
+    BytesN, Env, Symbol, Vec,
 };
 
 pub mod types;
@@ -24,15 +25,37 @@ pub trait BadgeNFTInterface {
 #[contract]
 pub struct Governance;
 
+#[contractevent]
+pub struct ProposalExecuted {
+    #[topic]
+    pub proposal_id: u32,
+    pub proposer: Address,
+}
+
+#[contractevent]
+pub struct ProposalCancelled {
+    #[topic]
+    pub proposal_id: u32,
+    pub cancelled_by: Address,
+}
+
+#[contractevent]
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
+}
+
 #[contractimpl]
 impl Governance {
-    /// Initializes the governance contract with the BadgeNFT contract address.
+    /// Initializes the governance contract with the admin and BadgeNFT contract address.
     /// Must be called once upon deployment.
-    pub fn initialize(env: Env, badge_contract_address: Address) {
+    pub fn initialize(env: Env, admin: Address, badge_contract_address: Address) {
         if env.storage().instance().has(&BADGE_NFT_KEY) {
             panic!("Already initialized");
         }
-
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
             .set(&BADGE_NFT_KEY, &badge_contract_address);
@@ -78,6 +101,85 @@ impl Governance {
             .persistent()
             .set(&DataKey::Proposal(proposal_id), &proposal);
         env.storage().persistent().set(&vote_key, &true);
+    }
+
+    /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
+    }
+
+    /// Cancels an active proposal. Only callable by the proposer or the Protocol Admin.
+    pub fn cancel_proposal(env: Env, caller: Address, proposal_id: u32) {
+        caller.require_auth();
+
+        let mut proposal = Self::get_proposal(env.clone(), proposal_id);
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        assert!(
+            caller == proposal.proposer || caller == stored_admin,
+            "Unauthorized"
+        );
+        assert!(env.ledger().timestamp() < proposal.end_time, "Voting ended");
+        assert!(!proposal.executed, "Already executed");
+
+        proposal.executed = true;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+
+        ProposalCancelled {
+            proposal_id,
+            cancelled_by: caller,
+        }
+        .publish(&env);
+    }
+
+    /// Executes a proposal if it has passed and the voting period has ended.
+    /// Marks the proposal as executed so the admin knows to action the approved change.
+    pub fn execute_proposal(env: Env, proposal_id: u32) {
+        let mut proposal = Self::get_proposal(env.clone(), proposal_id);
+
+        assert!(
+            env.ledger().timestamp() > proposal.end_time,
+            "Voting still active"
+        );
+        assert!(
+            proposal.votes_for > proposal.votes_against,
+            "Proposal rejected"
+        );
+        assert!(!proposal.executed, "Already executed");
+
+        proposal.executed = true;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+
+        ProposalExecuted {
+            proposal_id,
+            proposer: proposal.proposer,
+        }
+        .publish(&env);
     }
 }
 

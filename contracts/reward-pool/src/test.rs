@@ -446,3 +446,105 @@ fn test_fund_pool_zero_amount() {
     assert_eq!(token_client.balance(&donor), 1000);
     assert_eq!(token_client.balance(&client.address), 0);
 }
+
+// ── emergency_sweep Tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_emergency_sweep_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let recovery_wallet = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    // Initialize the reward pool
+    client.initialize(&admin, &token_id.address());
+
+    // Fund the pool with tokens
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &1000);
+
+    // Verify initial balance
+    assert_eq!(token_client.balance(&client.address), 1000);
+    assert_eq!(token_client.balance(&recovery_wallet), 0);
+
+    // Perform emergency sweep
+    client.emergency_sweep(&admin, &recovery_wallet);
+
+    // Verify contract balance is 0
+    assert_eq!(token_client.balance(&client.address), 0);
+
+    // Verify recovery wallet received full balance
+    assert_eq!(token_client.balance(&recovery_wallet), 1000);
+}
+
+#[test]
+#[should_panic(expected = "Not initialized")]
+fn test_emergency_sweep_not_initialized() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let recovery_wallet = Address::generate(&env);
+
+    // Try to sweep without initializing - should panic
+    client.emergency_sweep(&admin, &recovery_wallet);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_emergency_sweep_wrong_admin() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let wrong_admin = Address::generate(&env);
+    let recovery_wallet = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    // Initialize the reward pool
+    client.initialize(&admin, &token_id.address());
+
+    // Try to sweep with wrong admin - should panic
+    client.emergency_sweep(&wrong_admin, &recovery_wallet);
+}
+
+#[test]
+fn test_emergency_sweep_zero_balance() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let recovery_wallet = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    // Initialize the reward pool
+    client.initialize(&admin, &token_id.address());
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    // Verify initial balance is 0
+    assert_eq!(token_client.balance(&client.address), 0);
+
+    // Perform emergency sweep with zero balance (should succeed)
+    client.emergency_sweep(&admin, &recovery_wallet);
+
+    // Verify balances remain 0
+    assert_eq!(token_client.balance(&client.address), 0);
+    assert_eq!(token_client.balance(&recovery_wallet), 0);
+}
+
+#[test]
+fn test_emergency_sweep_large_balance() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let recovery_wallet = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    // Initialize the reward pool
+    client.initialize(&admin, &token_id.address());
+
+    // Fund with large amount
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &1_000_000);
+
+    // Perform emergency sweep
+    client.emergency_sweep(&admin, &recovery_wallet);
+
+    // Verify full balance transferred
+    assert_eq!(token_client.balance(&client.address), 0);
+    assert_eq!(token_client.balance(&recovery_wallet), 1_000_000);
+}

@@ -6,4 +6,5 @@ pub enum DataKey {
     Admin,
     Token,
     Spender(Address),
+    IsPaused,
 }
