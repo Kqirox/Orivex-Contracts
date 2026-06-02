@@ -17,4 +17,5 @@ pub struct Proposal {
 pub enum DataKey {
     Proposal(u32),
     UserVote(Address, u32),
+    Admin,
 }

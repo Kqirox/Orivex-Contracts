@@ -3,7 +3,7 @@
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
-use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env, Vec};
 
 #[contractevent]
 pub struct QuestCreated {
@@ -43,21 +43,69 @@ pub struct QuestRefunded {
     pub amount: i128,
 }
 
+#[contractevent]
+pub struct BatchReviewed {
+    #[topic]
+    pub employer: Address,
+    #[topic]
+    pub quest_id: u32,
+    pub approved_count: u32,
+}
+
+#[contractevent]
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
+}
+
 #[contract]
 pub struct QuestEngineContract;
 
 #[contractimpl]
 impl QuestEngineContract {
-    /// Initializes the QuestEngine contract with the token address.
-    pub fn initialize(env: Env, token: Address, reward_pool: Address) {
+    /// Initializes the QuestEngine contract with the token address and admin.
+    pub fn initialize(env: Env, admin: Address, token: Address, reward_pool: Address) {
         if env.storage().instance().has(&DataKey::Token) {
             panic!("Already initialized");
         }
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
         env.storage()
             .instance()
             .set(&DataKey::RewardPool, &reward_pool);
         env.storage().instance().set(&DataKey::QuestCounter, &0u32);
+    }
+
+    /// Toggles the pause state of the contract (emergency circuit breaker).
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `status` - The pause status (true = paused, false = unpaused)
+    ///
+    /// # Panics
+    /// * If contract is not initialized
+    /// * If admin does not match stored admin
+    /// * If admin authentication fails
+    pub fn set_pause(env: Env, admin: Address, status: bool) {
+        // 1. Fetch 'Admin' address from Instance storage
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        // 2. Assert admin == stored_admin
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        // 3. admin.require_auth()
+        admin.require_auth();
+
+        // 4. Store pause status in Instance storage
+        env.storage().instance().set(&DataKey::IsPaused, &status);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
@@ -180,6 +228,14 @@ impl QuestEngineContract {
         quest_id: u32,
         approve: bool,
     ) {
+        // 0. Check if contract is paused
+        let is_paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false);
+        assert!(!is_paused, "Contract is paused");
+
         // 1. employer.require_auth()
         employer.require_auth();
 
@@ -283,6 +339,108 @@ impl QuestEngineContract {
             employer,
             quest_id,
             amount: quest.reward_amount,
+        }
+        .publish(&env);
+    }
+
+    /// Approves multiple learner submissions in a single transaction.
+    /// Executes the full fee-adjusted payout for each learner.
+    pub fn batch_review_submissions(
+        env: Env,
+        employer: Address,
+        quest_id: u32,
+        learners: Vec<Address>,
+    ) {
+        // 0. Check if contract is paused
+        let is_paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false);
+        assert!(!is_paused, "Contract is paused");
+
+        employer.require_auth();
+
+        let quest: Quest = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Quest(quest_id))
+            .expect("Quest not found");
+        if quest.employer != employer {
+            panic!("Only the quest employer can review submissions");
+        }
+
+        let token_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+        let token_client = token::Client::new(&env, &token_address);
+
+        let reward_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::RewardPool)
+            .expect("Not initialized");
+
+        let mut approved_count: u32 = 0;
+        for learner in learners.iter() {
+            let submission_key = DataKey::Submission(learner.clone(), quest_id);
+            let mut submission: Submission = env
+                .storage()
+                .persistent()
+                .get(&submission_key)
+                .expect("Submission not found");
+
+            if submission.status != SubmissionStatus::Pending {
+                panic!("Submission is not pending review");
+            }
+
+            let fee = (quest.reward_amount * 15) / 100;
+            let learner_amount = quest.reward_amount - fee;
+
+            token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
+            token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
+
+            submission.status = SubmissionStatus::Approved;
+            env.storage().persistent().set(&submission_key, &submission);
+
+            SubmissionReviewed {
+                employer: employer.clone(),
+                learner,
+                quest_id,
+                approved: true,
+            }
+            .publish(&env);
+
+            approved_count += 1;
+        }
+
+        BatchReviewed {
+            employer,
+            quest_id,
+            approved_count,
+        }
+        .publish(&env);
+    }
+
+    /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
         }
         .publish(&env);
     }
