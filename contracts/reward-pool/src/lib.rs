@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
 pub mod types;
 use types::DataKey;
@@ -44,6 +44,13 @@ pub struct EmergencySweep {
     #[topic]
     pub recovery_wallet: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
 }
 
 #[contractimpl]
@@ -283,6 +290,27 @@ impl RewardPool {
             admin,
             recovery_wallet,
             amount: balance,
+        }
+        .publish(&env);
+    }
+
+    /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
         }
         .publish(&env);
     }
