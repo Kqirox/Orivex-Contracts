@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
 pub mod types;
 use types::DataKey;
@@ -35,6 +35,22 @@ pub struct PoolFunded {
     #[topic]
     pub donor: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+pub struct EmergencySweep {
+    #[topic]
+    pub admin: Address,
+    #[topic]
+    pub recovery_wallet: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
 }
 
 #[contractimpl]
@@ -102,6 +118,36 @@ impl RewardPool {
         SpenderAdded { spender }.publish(&env);
     }
 
+    /// Toggles the pause state of the contract (emergency circuit breaker).
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `status` - The pause status (true = paused, false = unpaused)
+    ///
+    /// # Panics
+    /// * If contract is not initialized
+    /// * If admin does not match stored admin
+    /// * If admin authentication fails
+    pub fn set_pause(env: Env, admin: Address, status: bool) {
+        // 1. Fetch 'Admin' address from Instance storage
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        // 2. Assert admin == stored_admin
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        // 3. admin.require_auth()
+        admin.require_auth();
+
+        // 4. Store pause status in Instance storage
+        env.storage().instance().set(&DataKey::IsPaused, &status);
+    }
+
     /// Distributes rewards from the pool to a learner.
     ///
     /// # Arguments
@@ -115,6 +161,14 @@ impl RewardPool {
     /// * If caller is not an authorized spender
     /// * If contract is not initialized
     pub fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128) {
+        // 0. Check if contract is paused
+        let is_paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false);
+        assert!(!is_paused, "Contract is paused");
+
         // 1. caller.require_auth()
         caller.require_auth();
 
@@ -186,6 +240,79 @@ impl RewardPool {
 
         // 5. Emit PoolFunded event
         PoolFunded { donor, amount }.publish(&env);
+    }
+
+    /// Emergency sweep function allowing admin to transfer all tokens from the contract
+    /// to a recovery wallet in case of a critical vulnerability.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `recovery_wallet` - The address to receive the swept tokens
+    ///
+    /// # Panics
+    /// * If contract is not initialized
+    /// * If admin does not match stored admin
+    /// * If admin authentication fails
+    pub fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address) {
+        // 1. admin.require_auth()
+        admin.require_auth();
+
+        // 2. Fetch stored admin from Instance storage
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        // 3. Assert admin == stored_admin
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        // 4. Fetch token address from Instance storage
+        let token_id: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+
+        // 5. Initialize token client
+        let token_client = token::Client::new(&env, &token_id);
+
+        // 6. Fetch full contract token balance
+        let balance = token_client.balance(&env.current_contract_address());
+
+        // 7. Transfer full balance to recovery wallet
+        token_client.transfer(&env.current_contract_address(), &recovery_wallet, &balance);
+
+        // 8. Emit EmergencySweep event
+        EmergencySweep {
+            admin,
+            recovery_wallet,
+            amount: balance,
+        }
+        .publish(&env);
+    }
+
+    /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
     }
 }
 
