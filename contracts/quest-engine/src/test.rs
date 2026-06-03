@@ -816,7 +816,7 @@ impl MockRewardPool {
 
 #[test]
 fn test_create_explore_quest_success() {
-    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let reward_amount: i128 = 500;
     let metadata_hash = BytesN::from_array(&env, &[60u8; 32]);
 
@@ -835,7 +835,7 @@ fn test_create_explore_quest_success() {
 #[test]
 #[should_panic(expected = "Unauthorized")]
 fn test_create_explore_quest_unauthorized() {
-    let (env, client, _token_id, _reward_pool, _admin) = setup();
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
     let unauthorized = Address::generate(&env);
     let reward_amount: i128 = 500;
     let metadata_hash = BytesN::from_array(&env, &[61u8; 32]);
@@ -845,7 +845,7 @@ fn test_create_explore_quest_unauthorized() {
 
 #[test]
 fn test_create_explore_quest_increments_ids() {
-    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let metadata_hash = BytesN::from_array(&env, &[62u8; 32]);
 
     let id1 = client.create_explore_quest(&admin, &100, &metadata_hash);
@@ -864,18 +864,24 @@ fn test_create_explore_quest_increments_ids() {
 
 #[test]
 fn test_verify_explore_quest_success() {
-    let (env, _client, token_id, _reward_pool, admin) = setup();
+    let (env, _client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let learner = Address::generate(&env);
     let reward_amount: i128 = 500;
     let metadata_hash = BytesN::from_array(&env, &[63u8; 32]);
 
-    // Register mock reward pool
+    // Register mock reward pool and stake vault
     let mock_reward_pool_id = env.register(MockRewardPool, ());
+    let mock_stake_vault_id = env.register(MockStakeVault, ());
 
     // Create a new client with mock reward pool
     let contract_id = env.register(QuestEngineContract, ());
     let client = QuestEngineContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_id, &mock_reward_pool_id);
+    client.initialize(
+        &admin,
+        &token_id,
+        &mock_reward_pool_id,
+        &mock_stake_vault_id,
+    );
 
     // Create explore quest
     let quest_id = client.create_explore_quest(&admin, &reward_amount, &metadata_hash);
@@ -891,7 +897,7 @@ fn test_verify_explore_quest_success() {
 #[test]
 #[should_panic(expected = "Unauthorized")]
 fn test_verify_explore_quest_unauthorized() {
-    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let unauthorized = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 500;
@@ -905,7 +911,7 @@ fn test_verify_explore_quest_unauthorized() {
 #[test]
 #[should_panic(expected = "Quest not found")]
 fn test_verify_explore_quest_nonexistent() {
-    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let learner = Address::generate(&env);
 
     client.verify_explore_quest(&admin, &learner, &999);
@@ -914,7 +920,7 @@ fn test_verify_explore_quest_nonexistent() {
 #[test]
 #[should_panic(expected = "Not an Explore quest")]
 fn test_verify_explore_quest_wrong_type() {
-    let (env, client, token_id, _reward_pool, admin) = setup();
+    let (env, client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -930,7 +936,7 @@ fn test_verify_explore_quest_wrong_type() {
 
 #[test]
 fn test_explore_quest_emits_event() {
-    let (env, client, _token_id, _reward_pool, admin) = setup();
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let reward_amount: i128 = 500;
     let metadata_hash = BytesN::from_array(&env, &[66u8; 32]);
 
@@ -942,7 +948,7 @@ fn test_explore_quest_emits_event() {
 
 #[test]
 fn test_mixed_quest_types() {
-    let (env, client, token_id, _reward_pool, admin) = setup();
+    let (env, client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let employer = Address::generate(&env);
     let metadata_hash = BytesN::from_array(&env, &[67u8; 32]);
 

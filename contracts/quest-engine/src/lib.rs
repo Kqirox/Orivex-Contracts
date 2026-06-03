@@ -4,7 +4,7 @@ pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
 use soroban_sdk::{
-    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env,
+    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
 };
 
 #[contractclient(name = "StakeVaultClient")]
@@ -69,6 +69,17 @@ pub struct ContractUpgraded {
     #[topic]
     pub admin: Address,
     pub new_wasm_hash: BytesN<32>,
+}
+
+#[contractevent]
+pub struct ExploreQuestVerified {
+    #[topic]
+    pub admin: Address,
+    #[topic]
+    pub learner: Address,
+    #[topic]
+    pub quest_id: u32,
+    pub amount: i128,
 }
 
 #[contract]
@@ -554,9 +565,6 @@ impl QuestEngineContract {
         }
         .publish(&env);
     }
-}
-
-#[cfg(test)]
 
     /// Verifies an Explore Quest completion and triggers payout from RewardPool.
     /// Only the admin can call this function to reward off-chain actions.
