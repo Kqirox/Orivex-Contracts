@@ -690,3 +690,87 @@ fn test_set_badge_nft_address_unauthorized_panics() {
     client.initialize(&admin);
     client.set_badge_nft_address(&fake_admin, &badge_address);
 }
+
+// ── transfer_ownership ────────────────────────────────────────────────────────
+
+#[test]
+fn test_transfer_ownership_success() {
+    let (env, client) = setup();
+    let (_, instructor, id) = setup_with_course(&env, &client);
+    let new_instructor = Address::generate(&env);
+
+    client.transfer_ownership(&instructor, &new_instructor, &id);
+
+    let course = client.get_course(&id);
+    assert_eq!(course.instructor, new_instructor);
+}
+
+#[test]
+fn test_transfer_ownership_emits_event() {
+    let (env, client) = setup();
+    let (_, instructor, id) = setup_with_course(&env, &client);
+    let new_instructor = Address::generate(&env);
+
+    client.transfer_ownership(&instructor, &new_instructor, &id);
+
+    // One OwnershipTransferred event must have been emitted
+    assert_eq!(env.events().all().len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the course instructor")]
+fn test_transfer_ownership_non_instructor_panics() {
+    let (env, client) = setup();
+    let (_, _, id) = setup_with_course(&env, &client);
+    let impostor = Address::generate(&env);
+    let new_instructor = Address::generate(&env);
+
+    client.transfer_ownership(&impostor, &new_instructor, &id);
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_transfer_ownership_nonexistent_course_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let new_instructor = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    client.transfer_ownership(&instructor, &new_instructor, &99);
+}
+
+#[test]
+fn test_transfer_ownership_new_instructor_can_update_metadata() {
+    let (env, client) = setup();
+    let (_, instructor, id) = setup_with_course(&env, &client);
+    let new_instructor = Address::generate(&env);
+
+    client.transfer_ownership(&instructor, &new_instructor, &id);
+
+    // New instructor must be able to update metadata after ownership transfer
+    let updated_hash = BytesN::from_array(&env, &[9u8; 32]);
+    client.update_metadata(&id, &updated_hash);
+
+    let course = client.get_course(&id);
+    assert_eq!(course.metadata_hash, updated_hash);
+}
+
+#[test]
+fn test_transfer_ownership_updates_instructor_field() {
+    let (env, client) = setup();
+    let (_, instructor, id) = setup_with_course(&env, &client);
+    let new_instructor = Address::generate(&env);
+
+    // Confirm original instructor before transfer
+    let before = client.get_course(&id);
+    assert_eq!(before.instructor, instructor);
+
+    client.transfer_ownership(&instructor, &new_instructor, &id);
+
+    // Confirm instructor field reflects the new address after transfer
+    let after = client.get_course(&id);
+    assert_eq!(after.instructor, new_instructor);
+    assert_ne!(after.instructor, instructor);
+}

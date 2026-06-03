@@ -35,6 +35,15 @@ pub struct CourseStatusChanged {
 }
 
 #[contractevent]
+pub struct OwnershipTransferred {
+    #[topic]
+    pub course_id: u32,
+    #[topic]
+    pub previous_instructor: Address,
+    pub new_instructor: Address,
+}
+
+#[contractevent]
 pub struct ModuleCompleted {
     #[topic]
     pub learner: Address,
@@ -261,6 +270,40 @@ impl CourseRegistry {
     pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
         let key = DataKey::Progress(learner, id);
         env.storage().persistent().get(&key).unwrap_or(0)
+    }
+
+    /// Transfers ownership of a course to a new instructor address.
+    /// Only callable by the current instructor of the course.
+    pub fn transfer_ownership(
+        env: Env,
+        current_instructor: Address,
+        new_instructor: Address,
+        course_id: u32,
+    ) {
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(course_id))
+            .expect("Course not found");
+
+        assert!(
+            course.instructor == current_instructor,
+            "Unauthorized: Caller is not the course instructor"
+        );
+
+        current_instructor.require_auth();
+
+        course.instructor = new_instructor.clone();
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(course_id), &course);
+
+        OwnershipTransferred {
+            course_id,
+            previous_instructor: current_instructor,
+            new_instructor,
+        }
+        .publish(&env);
     }
 
     /// Records a learner's completion of a module after off-chain quiz validation.
