@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
 pub mod types;
 use types::{DataKey, StakeInfo};
@@ -29,6 +29,13 @@ pub struct Unstaked {
     #[topic]
     pub user: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
 }
 
 #[contractimpl]
@@ -110,7 +117,7 @@ impl StakeVault {
             .expect("Not initialized");
         let token_client = token::Client::new(&env, &token_id);
 
-        token_client.transfer(&env.current_contract_address(), &user, &stake_info.amount);
+        token_client.transfer(&env.current_contract_address(), user.clone(), &stake_info.amount);
 
         env.storage()
             .persistent()
@@ -121,6 +128,43 @@ impl StakeVault {
             amount: stake_info.amount,
         }
         .publish(&env);
+    }
+
+    pub fn get_multiplier(env: Env, user: Address) -> u32 {
+        let stake_info: StakeInfo = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserStake(user))
+            .unwrap_or(StakeInfo {
+                amount: 0,
+                lock_timestamp: 0,
+            });
+
+        if stake_info.amount >= 500 {
+            200
+        } else if stake_info.amount >= 100 {
+            120
+        } else {
+            100
+        }
+    }
+
+    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgraded { admin, new_wasm_hash }.publish(&env);
     }
 }
 

@@ -5,7 +5,10 @@ use soroban_sdk::{
     token, Address, Env,
 };
 
-use crate::{StakeVault, StakeVaultClient};
+use crate::{
+    types::{DataKey, StakeInfo},
+    StakeVault, StakeVaultClient,
+};
 
 fn setup() -> (Env, StakeVaultClient<'static>) {
     let env = Env::default();
@@ -95,7 +98,7 @@ fn test_unstake_panics_when_lock_period_active() {
 }
 
 #[test]
-fn test_unstake_succeeds_after_lock_and_clears_storage() {
+fn test_unstake_succeeds_after_lock() {
     let (env, client) = setup();
 
     let admin = Address::generate(&env);
@@ -138,4 +141,67 @@ fn test_unstake_twice_panics_after_withdrawal() {
     client.unstake(&user);
 
     client.unstake(&user);
+}
+
+#[test]
+fn test_get_multiplier() {
+    let (env, client) = setup();
+    let user = Address::generate(&env);
+
+    assert_eq!(client.get_multiplier(&user), 100);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 50,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 100);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 100,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 120);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 499,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 120);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 500,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 200);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 1000,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 200);
 }
