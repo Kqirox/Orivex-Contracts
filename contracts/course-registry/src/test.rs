@@ -773,6 +773,8 @@ fn test_transfer_ownership_updates_instructor_field() {
     let after = client.get_course(&id);
     assert_eq!(after.instructor, new_instructor);
     assert_ne!(after.instructor, instructor);
+}
+
 // ── Badge minting on course completion ───────────────────────────────────────
 
 /// Helper: deploys and initializes a BadgeNFT contract, authorizing the given registry address.
