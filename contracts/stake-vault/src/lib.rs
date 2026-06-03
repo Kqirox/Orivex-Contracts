@@ -35,7 +35,14 @@ impl StakeVault {
     }
 
     pub fn get_multiplier(env: Env, user: Address) -> u32 {
-        let stake_info = env.storage().persistent().get(&DataKey::UserStake(user)).unwrap_or(StakeInfo { amount: 0, lock_timestamp: 0 });
+        let stake_info = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserStake(user))
+            .unwrap_or(StakeInfo {
+                amount: 0,
+                lock_timestamp: 0,
+            });
         if stake_info.amount >= 500 {
             200
         } else if stake_info.amount >= 100 {
@@ -56,9 +63,14 @@ impl StakeVault {
             .expect("Not initialized");
         assert!(admin == stored_admin, "Unauthorized");
 
-        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
 
-        ContractUpgraded { admin, new_wasm_hash }.publish(&env);
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
     }
 }
 

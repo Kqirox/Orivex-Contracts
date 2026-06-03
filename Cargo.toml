@@ -5,9 +5,8 @@ members = [
   "contracts/reward-pool",
   "contracts/quest-engine",
   "contracts/governance",
-  "contracts/stake-vault"
-  "contracts/badge-nft",
-  "contracts/governance"
+  "contracts/stake-vault",
+  "contracts/badge-nft"
 ]
 
 [workspace.dependencies]
