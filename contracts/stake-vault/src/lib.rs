@@ -117,7 +117,11 @@ impl StakeVault {
             .expect("Not initialized");
         let token_client = token::Client::new(&env, &token_id);
 
-        token_client.transfer(&env.current_contract_address(), user.clone(), &stake_info.amount);
+        token_client.transfer(
+            &env.current_contract_address(),
+            user.clone(),
+            &stake_info.amount,
+        );
 
         env.storage()
             .persistent()
@@ -164,7 +168,11 @@ impl StakeVault {
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
 
-        ContractUpgraded { admin, new_wasm_hash }.publish(&env);
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
     }
 }
 
