@@ -42,4 +42,5 @@ pub enum DataKey {
     QuestCounter,
     RewardPool,
     IsPaused,
+    StakeVault,
 }
