@@ -43,6 +43,13 @@ pub struct ModuleCompleted {
     pub new_progress: u32,
 }
 
+#[contractevent]
+pub struct ContractUpgraded {
+    #[topic]
+    pub admin: Address,
+    pub new_wasm_hash: BytesN<32>,
+}
+
 #[contractimpl]
 impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
@@ -320,6 +327,27 @@ impl CourseRegistry {
                 badge_nft.mint_badge(&env.current_contract_address(), &learner, &id);
             }
         }
+    }
+
+    /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgraded {
+            admin,
+            new_wasm_hash,
+        }
+        .publish(&env);
     }
 }
 
