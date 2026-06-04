@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 8,
+    "address": 7,
     "nonce": 0,
     "mux_id": 0
   },
@@ -92,7 +92,7 @@
                   "i128": "1000"
                 },
                 {
-                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+                  "bytes": "4343434343434343434343434343434343434343434343434343434343434343"
                 }
               ]
             }
@@ -124,21 +124,21 @@
     ],
     [
       [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
         {
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "submit_proof",
+              "function_name": "create_explore_quest",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "u32": 1
+                  "i128": "500"
                 },
                 {
-                  "bytes": "0808080808080808080808080808080808080808080808080808080808080808"
+                  "bytes": "4343434343434343434343434343434343434343434343434343434343434343"
                 }
               ]
             }
@@ -146,7 +146,9 @@
           "sub_invocations": []
         }
       ]
-    ]
+    ],
+    [],
+    []
   ],
   "ledger": {
     "protocol_version": 23,
@@ -277,7 +279,7 @@
                         "symbol": "metadata_hash"
                       },
                       "val": {
-                        "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+                        "bytes": "4343434343434343434343434343434343434343434343434343434343434343"
                       }
                     },
                     {
@@ -316,13 +318,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "Submission"
+                  "symbol": "Quest"
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
-                },
-                {
-                  "u32": 1
+                  "u32": 2
                 }
               ]
             },
@@ -339,13 +338,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "Submission"
+                      "symbol": "Quest"
                     },
                     {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
-                    },
-                    {
-                      "u32": 1
+                      "u32": 2
                     }
                   ]
                 },
@@ -354,22 +350,46 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "proof_hash"
+                        "symbol": "active"
                       },
                       "val": {
-                        "bytes": "0808080808080808080808080808080808080808080808080808080808080808"
+                        "bool": true
                       }
                     },
                     {
                       "key": {
-                        "symbol": "status"
+                        "symbol": "employer"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata_hash"
+                      },
+                      "val": {
+                        "bytes": "4343434343434343434343434343434343434343434343434343434343434343"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "quest_type"
                       },
                       "val": {
                         "vec": [
                           {
-                            "symbol": "Pending"
+                            "symbol": "Explore"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "reward_amount"
+                      },
+                      "val": {
+                        "i128": "500"
                       }
                     }
                   ]
@@ -425,7 +445,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       },
                       {
@@ -545,6 +565,39 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
             "key": {
               "ledger_key_nonce": {
+                "nonce": "2032731177588607455"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "2032731177588607455"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "ledger_key_nonce": {
                 "nonce": "5541220902715666415"
               }
             },
@@ -594,39 +647,6 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "4837995959683129791"
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          6311999
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": "2032731177588607455"
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": "2032731177588607455"
                   }
                 },
                 "durability": "temporary",
@@ -913,41 +933,5 @@
       ]
     ]
   },
-  "events": [
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "proof_submitted"
-              },
-              {
-                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
-              },
-              {
-                "u32": 1
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "proof_hash"
-                  },
-                  "val": {
-                    "bytes": "0808080808080808080808080808080808080808080808080808080808080808"
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    }
-  ]
+  "events": []
 }
