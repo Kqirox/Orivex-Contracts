@@ -12,6 +12,7 @@ use types::Badge;
 pub trait BadgeNFTInterface {
     fn initialize(env: Env, admin: Address);
     fn mint_badge(env: Env, caller: Address, learner: Address, course_id: u32);
+    fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32);
     fn get_badges(env: Env, learner: Address) -> Vec<Badge>;
     fn get_badge_count(env: Env, learner: Address) -> u32;
     fn has_badge(env: Env, learner: Address, course_id: u32) -> bool;
@@ -24,6 +25,14 @@ pub struct BadgeMinted {
     #[topic]
     pub course_id: u32,
     pub minted_at: u64,
+}
+
+#[contractevent]
+pub struct BadgeRevoked {
+    #[topic]
+    pub learner: Address,
+    #[topic]
+    pub course_id: u32,
 }
 
 #[contractevent]
@@ -41,7 +50,7 @@ mod contract_impl {
     use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 
     use crate::types::{Badge, DataKey};
-    use crate::{BadgeMinted, ContractUpgraded};
+    use crate::{BadgeMinted, BadgeRevoked, ContractUpgraded};
 
     #[contract]
     pub struct BadgeNFT;
@@ -109,7 +118,69 @@ mod contract_impl {
             .publish(&env);
         }
 
+        /// Revokes a Soulbound Token (badge) from a learner's address.
+        /// Only the official protocol registry can trigger this for fraud prevention.
+        ///
+        /// # Arguments
+        /// * `admin` - The caller address (must be the authorized registry)
+        /// * `learner` - The learner address to revoke the badge from
+        /// * `course_id` - The course ID of the badge to revoke
+        ///
+        /// # Panics
+        /// * If caller authentication fails
+        /// * If caller is not the authorized registry
+        pub fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32) {
+            // 1. admin.require_auth()
+            admin.require_auth();
+
+            // 2. Fetch 'Admin' (Registry) address from Instance storage. Assert caller == Admin.
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Contract not initialized");
+            assert!(
+                admin == stored_admin,
+                "Unauthorized: Caller is not the authorized registry"
+            );
+
+            // 3. Construct DataKey::UserBadges(learner).
+            let badges_key = DataKey::UserBadges(learner.clone());
+
+            // 4. Fetch existing Vec<Badge>.
+            let mut badges: Vec<Badge> = env
+                .storage()
+                .persistent()
+                .get(&badges_key)
+                .unwrap_or_else(|| Vec::new(&env));
+
+            // 5. Find the badge with course_id and remove it.
+            let mut found = false;
+            let mut index_to_remove = 0;
+            for (i, badge) in badges.iter().enumerate() {
+                if badge.course_id == course_id {
+                    index_to_remove = i as u32;
+                    found = true;
+                    break;
+                }
+            }
+
+            if found {
+                badges.remove(index_to_remove);
+                env.storage().persistent().set(&badges_key, &badges);
+
+                // 6. Emit BadgeRevoked event.
+                BadgeRevoked { learner, course_id }.publish(&env);
+            }
+        }
+
         /// Returns all badges for a specific learner.
+        ///
+        /// # Arguments
+        /// * `learner` - The learner address
+        ///
+        /// # Returns
+        /// Vector of Badge structs. Returns empty vector if learner has no badges.
         pub fn get_badges(env: Env, learner: Address) -> Vec<Badge> {
             let badges_key = DataKey::UserBadges(learner);
             env.storage()
@@ -119,12 +190,25 @@ mod contract_impl {
         }
 
         /// Returns the count of badges for a specific learner.
+        ///
+        /// # Arguments
+        /// * `learner` - The learner address
+        ///
+        /// # Returns
+        /// Number of badges the learner owns.
         pub fn get_badge_count(env: Env, learner: Address) -> u32 {
             let badges = Self::get_badges(env, learner);
             badges.len()
         }
 
         /// Checks if a learner has a specific badge.
+        ///
+        /// # Arguments
+        /// * `learner` - The learner address
+        /// * `course_id` - The course ID to check
+        ///
+        /// # Returns
+        /// true if the learner has the badge, false otherwise.
         pub fn has_badge(env: Env, learner: Address, course_id: u32) -> bool {
             let badges = Self::get_badges(env, learner);
             for badge in badges.iter() {
