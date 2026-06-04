@@ -14,37 +14,62 @@ fn test_get_multiplier() {
     assert_eq!(client.get_multiplier(&user), 100);
 
     // Set stake to 50 (< 100)
-    let stake_info = StakeInfo { amount: 50, lock_timestamp: 0 };
+    let stake_info = StakeInfo {
+        amount: 50,
+        lock_timestamp: 0,
+    };
     env.as_contract(&contract_id, || {
-        env.storage().persistent().set(&DataKey::UserStake(user.clone()), &stake_info);
+        env.storage()
+            .persistent()
+            .set(&DataKey::UserStake(user.clone()), &stake_info);
     });
     assert_eq!(client.get_multiplier(&user), 100);
 
     // Set stake to 100 (100 <= x < 500)
-    let stake_info = StakeInfo { amount: 100, lock_timestamp: 0 };
+    let stake_info = StakeInfo {
+        amount: 100,
+        lock_timestamp: 0,
+    };
     env.as_contract(&contract_id, || {
-        env.storage().persistent().set(&DataKey::UserStake(user.clone()), &stake_info);
+        env.storage()
+            .persistent()
+            .set(&DataKey::UserStake(user.clone()), &stake_info);
     });
     assert_eq!(client.get_multiplier(&user), 120);
 
     // Set stake to 499 (100 <= x < 500)
-    let stake_info = StakeInfo { amount: 499, lock_timestamp: 0 };
+    let stake_info = StakeInfo {
+        amount: 499,
+        lock_timestamp: 0,
+    };
     env.as_contract(&contract_id, || {
-        env.storage().persistent().set(&DataKey::UserStake(user.clone()), &stake_info);
+        env.storage()
+            .persistent()
+            .set(&DataKey::UserStake(user.clone()), &stake_info);
     });
     assert_eq!(client.get_multiplier(&user), 120);
 
     // Set stake to 500 (x >= 500)
-    let stake_info = StakeInfo { amount: 500, lock_timestamp: 0 };
+    let stake_info = StakeInfo {
+        amount: 500,
+        lock_timestamp: 0,
+    };
     env.as_contract(&contract_id, || {
-        env.storage().persistent().set(&DataKey::UserStake(user.clone()), &stake_info);
+        env.storage()
+            .persistent()
+            .set(&DataKey::UserStake(user.clone()), &stake_info);
     });
     assert_eq!(client.get_multiplier(&user), 200);
 
     // Set stake to 1000 (x >= 500)
-    let stake_info = StakeInfo { amount: 1000, lock_timestamp: 0 };
+    let stake_info = StakeInfo {
+        amount: 1000,
+        lock_timestamp: 0,
+    };
     env.as_contract(&contract_id, || {
-        env.storage().persistent().set(&DataKey::UserStake(user.clone()), &stake_info);
+        env.storage()
+            .persistent()
+            .set(&DataKey::UserStake(user.clone()), &stake_info);
     });
     assert_eq!(client.get_multiplier(&user), 200);
 }

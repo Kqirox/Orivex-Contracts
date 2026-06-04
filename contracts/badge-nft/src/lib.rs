@@ -168,13 +168,9 @@ mod contract_impl {
             if found {
                 badges.remove(index_to_remove);
                 env.storage().persistent().set(&badges_key, &badges);
-                
+
                 // 6. Emit BadgeRevoked event.
-                BadgeRevoked {
-                    learner,
-                    course_id,
-                }
-                .publish(&env);
+                BadgeRevoked { learner, course_id }.publish(&env);
             }
         }
 
