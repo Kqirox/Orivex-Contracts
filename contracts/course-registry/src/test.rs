@@ -785,7 +785,11 @@ use soroban_sdk::token;
 fn setup_reward_pool<'a>(
     env: &Env,
     token_admin: &Address,
-) -> (RewardPoolClient<'a>, soroban_sdk::token::StellarAssetClient<'a>, Address) {
+) -> (
+    RewardPoolClient<'a>,
+    soroban_sdk::token::StellarAssetClient<'a>,
+    Address,
+) {
     let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_address = token_id.address();
     let token_sac = token::StellarAssetClient::new(env, &token_address);
@@ -945,4 +949,3 @@ fn test_reward_distributed_only_on_final_module() {
     client.complete_module(&admin, &learner, &course_id);
     assert_eq!(token_sac.balance(&learner), 10_0000000);
 }
-
