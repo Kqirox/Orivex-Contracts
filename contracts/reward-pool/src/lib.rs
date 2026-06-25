@@ -2,7 +2,6 @@
 use soroban_sdk::{contractclient, contractevent, Address, BytesN, Env};
 
 pub mod types;
-use types::DataKey;
 
 #[contractclient(name = "RewardPoolClient")]
 pub trait RewardPoolInterface {
