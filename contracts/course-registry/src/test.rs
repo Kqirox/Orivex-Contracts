@@ -837,7 +837,7 @@ fn test_complete_course_triggers_reward_distribution() {
 
     // Verify CourseCompleted event was emitted
     let all_events = env.events().all();
-    assert!(all_events.len() >= 1);
+    assert!(!all_events.is_empty());
 }
 
 /// Test 2 – Reward NOT distributed when CourseRegistry is not whitelisted.
