@@ -17,4 +17,5 @@ pub enum DataKey {
     CourseCount,
     Admin,
     BadgeNftAddress,
+    RewardPoolAddress,
 }

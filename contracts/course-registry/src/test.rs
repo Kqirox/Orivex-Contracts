@@ -774,3 +774,175 @@ fn test_transfer_ownership_updates_instructor_field() {
     assert_eq!(after.instructor, new_instructor);
     assert_ne!(after.instructor, instructor);
 }
+
+// ── Reward payout on course completion (Issue #53) ────────────────────────────
+
+use reward_pool::{RewardPool, RewardPoolClient};
+use soroban_sdk::token;
+
+/// Deploys + initializes a RewardPool backed by a real SAC token.
+/// Returns (reward_pool_client, token_admin, token_sac_client, token_address).
+fn setup_reward_pool<'a>(
+    env: &Env,
+    token_admin: &Address,
+) -> (RewardPoolClient<'a>, soroban_sdk::token::StellarAssetClient<'a>, Address) {
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_address = token_id.address();
+    let token_sac = token::StellarAssetClient::new(env, &token_address);
+
+    let reward_pool_id = env.register(RewardPool, ());
+    let reward_pool_client = RewardPoolClient::new(env, &reward_pool_id);
+    reward_pool_client.initialize(token_admin, &token_address);
+
+    (reward_pool_client, token_sac, token_address)
+}
+
+/// Test 1 – Complete course triggers reward distribution (full happy path).
+#[test]
+fn test_complete_course_triggers_reward_distribution() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    // Initialise CourseRegistry and create a 2-module course
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+
+    // Deploy RewardPool and fund it
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000); // 100 USDC
+
+    // Wire up: whitelist CourseRegistry in RewardPool, set RewardPool address in CourseRegistry
+    reward_pool_client.add_approved_spender(&admin, &client.address);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // Also wire up a badge NFT so we can confirm badge + reward both fire
+    let badge_client = setup_badge_nft(&env, &client.address);
+    client.set_badge_nft_address(&admin, &badge_client.address);
+
+    // Module 1 — no reward yet
+    client.complete_module(&admin, &learner, &course_id);
+    assert!(!badge_client.has_badge(&learner, &course_id));
+    assert_eq!(token_sac.balance(&learner), 0);
+
+    // Module 2 (final) — badge minted AND reward transferred
+    client.complete_module(&admin, &learner, &course_id);
+    assert!(badge_client.has_badge(&learner, &course_id));
+    assert_eq!(token_sac.balance(&learner), 10_0000000); // 10 USDC
+
+    // Verify CourseCompleted event was emitted
+    let all_events = env.events().all();
+    assert!(all_events.len() >= 1);
+}
+
+/// Test 2 – Reward NOT distributed when CourseRegistry is not whitelisted.
+#[test]
+#[should_panic(expected = "Caller is not an authorized spender")]
+fn test_reward_not_distributed_without_whitelist() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+
+    // Deploy RewardPool and fund it — but do NOT whitelist CourseRegistry
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000);
+
+    // Set the RewardPool address WITHOUT calling add_approved_spender
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // Should panic: "Caller is not an authorized spender"
+    client.complete_module(&admin, &learner, &course_id);
+}
+
+/// Test 3 – No reward distributed if RewardPool address was never set (graceful degradation).
+#[test]
+fn test_reward_not_distributed_if_reward_pool_not_set() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+
+    // Wire badge NFT but deliberately omit set_reward_pool_address
+    let badge_client = setup_badge_nft(&env, &client.address);
+    client.set_badge_nft_address(&admin, &badge_client.address);
+
+    // Completing the only module must NOT panic
+    client.complete_module(&admin, &learner, &course_id);
+
+    // Badge is still minted
+    assert!(badge_client.has_badge(&learner, &course_id));
+    // Progress reached total_modules
+    assert_eq!(client.get_progress(&learner, &course_id), 1);
+}
+
+/// Test 4 – Multiple learners each receive independent rewards.
+#[test]
+fn test_multiple_learners_get_independent_rewards() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner_a = Address::generate(&env);
+    let learner_b = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000); // enough for both
+
+    reward_pool_client.add_approved_spender(&admin, &client.address);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // Learner A completes the course
+    client.complete_module(&admin, &learner_a, &course_id);
+    assert_eq!(token_sac.balance(&learner_a), 10_0000000);
+
+    // Learner B completes the course
+    client.complete_module(&admin, &learner_b, &course_id);
+    assert_eq!(token_sac.balance(&learner_b), 10_0000000);
+
+    // Pool balance decreased by 2 × 10 USDC
+    assert_eq!(
+        token_sac.balance(&reward_pool_client.address),
+        1_000_000_000 - 2 * 10_0000000
+    );
+}
+
+/// Test 5 – Reward is distributed ONLY on the final module (not intermediate ones).
+#[test]
+fn test_reward_distributed_only_on_final_module() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000);
+
+    reward_pool_client.add_approved_spender(&admin, &client.address);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // Module 1 — no reward
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(token_sac.balance(&learner), 0);
+
+    // Module 2 — no reward
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(token_sac.balance(&learner), 0);
+
+    // Module 3 (final) — reward paid out
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(token_sac.balance(&learner), 10_0000000);
+}
+

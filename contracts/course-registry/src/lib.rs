@@ -5,6 +5,7 @@ pub mod types;
 use types::{Course, DataKey};
 
 use badge_nft::BadgeNFTClient;
+use reward_pool::RewardPoolClient;
 
 #[contract]
 pub struct CourseRegistry;
@@ -53,6 +54,15 @@ pub struct ModuleCompleted {
 }
 
 #[contractevent]
+pub struct CourseCompleted {
+    #[topic]
+    pub learner: Address,
+    #[topic]
+    pub course_id: u32,
+    pub reward_amount: i128,
+}
+
+#[contractevent]
 pub struct ContractUpgraded {
     #[topic]
     pub admin: Address,
@@ -67,6 +77,26 @@ impl CourseRegistry {
             panic!("Already initialized");
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// Registers the RewardPool contract address so the registry can trigger payouts on completion.
+    /// Only callable by the Protocol Admin.
+    pub fn set_reward_pool_address(env: Env, admin: Address, reward_pool_address: Address) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        env.storage()
+            .instance()
+            .set(&DataKey::RewardPoolAddress, &reward_pool_address);
     }
 
     /// Registers the BadgeNFT contract address so the registry can mint badges on completion.
@@ -368,6 +398,28 @@ impl CourseRegistry {
             {
                 let badge_nft = BadgeNFTClient::new(&env, &badge_nft_address);
                 badge_nft.mint_badge(&env.current_contract_address(), &learner, &id);
+            }
+
+            // 10. Trigger reward distribution if RewardPool address is configured
+            if let Some(reward_pool_address) = env
+                .storage()
+                .instance()
+                .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
+            {
+                let reward_pool = RewardPoolClient::new(&env, &reward_pool_address);
+                let base_reward: i128 = 10_0000000; // 10 USDC (7 decimal places)
+                reward_pool.distribute_reward(
+                    &env.current_contract_address(),
+                    &learner,
+                    &base_reward,
+                );
+
+                CourseCompleted {
+                    learner: learner.clone(),
+                    course_id: id,
+                    reward_amount: base_reward,
+                }
+                .publish(&env);
             }
         }
     }

@@ -270,6 +270,7 @@ name = "course-registry"
 version = "0.1.0"
 dependencies = [
  "badge-nft",
+ "reward-pool",
  "soroban-sdk",
 ]
 
