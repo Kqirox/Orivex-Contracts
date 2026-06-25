@@ -832,12 +832,14 @@ fn test_complete_course_triggers_reward_distribution() {
 
     // Module 2 (final) — badge minted AND reward transferred
     client.complete_module(&admin, &learner, &course_id);
-    assert!(badge_client.has_badge(&learner, &course_id));
-    assert_eq!(token_sac.balance(&learner), 10_0000000); // 10 USDC
 
-    // Verify CourseCompleted event was emitted
+    // Verify CourseCompleted event was emitted immediately after contract call
+    // (subsequent client calls like has_badge or balance will clear the event log)
     let all_events = env.events().all();
     assert!(!all_events.is_empty());
+
+    assert!(badge_client.has_badge(&learner, &course_id));
+    assert_eq!(token_sac.balance(&learner), 10_0000000); // 10 USDC
 }
 
 /// Test 2 – Reward NOT distributed when CourseRegistry is not whitelisted.
