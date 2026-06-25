@@ -14,8 +14,10 @@ doctest = false
 [dependencies]
 soroban-sdk = { workspace = true }
 badge-nft = { path = "../badge-nft", default-features = false }
+reward-pool = { path = "../reward-pool", default-features = false }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 badge-nft = { path = "../badge-nft", features = ["testutils"] }
+reward-pool = { path = "../reward-pool", features = ["testutils"] }
 
