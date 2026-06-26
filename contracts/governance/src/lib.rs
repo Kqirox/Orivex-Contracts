@@ -1,4 +1,7 @@
 #![no_std]
+//! Crate overview — badge-weighted proposal lifecycle: create,
+//! vote, execute, cancel. Vote weight = number of badges owned at
+//! the moment of the cast.
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contracttype, symbol_short, Address,
     BytesN, Env, Symbol, Vec,
