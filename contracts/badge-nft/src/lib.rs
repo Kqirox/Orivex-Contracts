@@ -62,7 +62,10 @@ mod contract_impl {
         ///
         /// # Panics
         /// * If contract is already initialized
-        pub fn initialize(env: Env, admin: Address) {
+        /// Bound-checked initializer used by CourseRegistry to deploy
+    /// this contract. Subsequent calls panic via the `Already initialized`
+    /// guard.
+    pub fn initialize(env: Env, admin: Address) {
             if env.storage().instance().has(&DataKey::Admin) {
                 panic!("Already initialized");
             }
