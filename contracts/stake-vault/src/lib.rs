@@ -53,6 +53,9 @@ impl StakeVault {
         StakeVaultInitialized { admin, token }.publish(&env);
     }
 
+    /// Locks tokens for the configured lock period and resets the
+    /// caller's `lock_timestamp` to the current ledger time. Multi-call
+    /// stakes accumulate in the same `StakeInfo.amount` field.
     pub fn stake(env: Env, user: Address, amount: i128) {
         user.require_auth();
 
