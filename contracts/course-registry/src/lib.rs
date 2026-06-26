@@ -356,6 +356,10 @@ impl CourseRegistry {
 
     /// Records a learner's completion of a module after off-chain quiz validation.
     /// Only callable by the authorized verifier (protocol admin).
+    /// Records a verifier-confirmed module completion and emits the
+    /// `ModuleCompleted` event. On the final module, this function
+    /// additionally cross-calls the BadgeNFT (mint soulbound badge) and
+    /// the RewardPool (USDC payout) when those addresses are wired.
     pub fn complete_module(env: Env, verifier: Address, learner: Address, id: u32) {
         // 1. Authenticate the verifier's signature
         verifier.require_auth();
