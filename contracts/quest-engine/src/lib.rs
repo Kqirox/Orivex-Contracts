@@ -329,6 +329,10 @@ impl QuestEngineContract {
     }
 
     /// Allows an employer to review and approve/reject a learner's submission.
+    /// Approves or rejects a single submission, applying the staking
+    /// multiplier from the configured StakeVault. The boosted learner
+    /// payout is capped at the available post-fee balance so that
+    /// employer-funded quests can never go negative.
     pub fn review_submission(
         env: Env,
         employer: Address,
