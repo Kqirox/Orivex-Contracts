@@ -136,7 +136,10 @@ mod contract_impl {
         /// # Panics
         /// * If caller authentication fails
         /// * If caller is not the authorized registry
-        pub fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32) {
+        /// Revoke a previously-minted badge by removing the matching entry
+    /// from the learner's `Badge` vector. If the badge is not present,
+    /// the function is a no-op (no event emitted, no panic).
+    pub fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32) {
             // 1. admin.require_auth()
             admin.require_auth();
 
