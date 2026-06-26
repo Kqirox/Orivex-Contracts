@@ -184,7 +184,11 @@ mod contract_impl {
         /// * If amount is not positive
         /// * If caller is not an authorized spender
         /// * If contract is not initialized
-        pub fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128) {
+        /// Performs the canonical USDC payout path used by CourseRegistry.
+    /// Spender must be whitelisted via `add_approved_spender`. The
+    /// amount must be strictly positive. The contract must be unpaused.
+    /// Funds are transferred from this contract's balance.
+    pub fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128) {
             // 0. Check if contract is paused
             let is_paused: bool = env
                 .storage()
