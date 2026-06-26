@@ -164,6 +164,10 @@ impl Governance {
 
     /// Executes a proposal if it has passed and the voting period has ended.
     /// Marks the proposal as executed so the admin knows to action the approved change.
+    /// Marks a passed proposal as executed if voting is closed and
+    /// strictly more votes were cast in favor than against. Tied votes
+    /// panic with `"Proposal rejected"`. Re-execution panics with
+    /// `"Already executed"`.
     pub fn execute_proposal(env: Env, proposal_id: u32) {
         let mut proposal = Self::get_proposal(env.clone(), proposal_id);
 
