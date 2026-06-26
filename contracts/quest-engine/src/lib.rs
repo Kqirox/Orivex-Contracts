@@ -592,6 +592,10 @@ impl QuestEngineContract {
     /// * If quest is not found
     /// * If quest type is not Explore
     /// * If contract is not initialized
+    /// Admin-only confirmation that a learner completed an off-chain
+    /// action. Triggers a cross-contract `distribute_reward` call into
+    /// the configured RewardPool. The QuestEngine must be whitelisted
+    /// as an approved spender on RewardPool.
     pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
         // 1. admin.require_auth()
         admin.require_auth();
