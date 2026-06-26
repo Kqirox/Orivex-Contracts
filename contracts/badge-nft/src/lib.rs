@@ -1,4 +1,7 @@
 #![no_std]
+//! Crate overview — soulbound badge issuance, retrieval, and
+//! admin revocation. Implements `BadgeNFTInterface` so dependents
+//! can call it through a generated client.
 use soroban_sdk::{contractclient, contractevent, Address, Env, Vec};
 
 pub mod types;
