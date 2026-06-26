@@ -130,6 +130,10 @@ impl CourseRegistry {
     }
 
     /// Registers a new course on-chain.
+    /// Allocates the next monotonically-increasing course ID and stores
+    /// the resulting `Course` struct in persistent storage under
+    /// `DataKey::Course(id)`. `total_modules` must be strictly positive;
+    /// the cap on courses is bounded by the `u32` return value.
     pub fn create_course(
         env: Env,
         admin: Address,
