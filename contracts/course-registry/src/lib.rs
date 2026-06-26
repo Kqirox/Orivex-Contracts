@@ -209,6 +209,10 @@ impl CourseRegistry {
     }
 
     /// Enrolls a learner in an active course, initializing their progress to 0.
+    /// Initializes a learner progress record at zero for the requested
+    /// course. The first enrollment writes `0u32` to the
+    /// `DataKey::Progress(learner, id)` slot. Panics with
+    /// `"Learner already enrolled"` if a record already exists.
     pub fn enroll(env: Env, learner: Address, id: u32) {
         learner.require_auth();
 
