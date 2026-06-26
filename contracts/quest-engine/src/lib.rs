@@ -142,6 +142,10 @@ impl QuestEngineContract {
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
     /// This acts as an isolated vault specifically for B2B bounties.
+    /// Employer-funded quest that is funded out of the employer's
+    /// balance at create time. The full `reward_amount` is locked in
+    /// the QuestEngine contract; review actions later split it 85 / 15
+    /// between learner and reward-pool.
     pub fn create_build_quest(
         env: Env,
         employer: Address,
