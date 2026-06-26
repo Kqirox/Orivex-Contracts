@@ -249,7 +249,10 @@ mod contract_impl {
         /// * If contract is not initialized
         /// * If donor authentication fails
         /// * If token transfer fails
-        pub fn fund_pool(env: Env, donor: Address, amount: i128) {
+        /// Donor-funded top-up of the reward pool's token balance. The donor
+    /// must authorize the token transfer; on success a `PoolFunded`
+    /// event is published and the contract's balance increases.
+    pub fn fund_pool(env: Env, donor: Address, amount: i128) {
             // 1. donor.require_auth()
             donor.require_auth();
 
