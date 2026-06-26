@@ -99,6 +99,9 @@ impl StakeVault {
         .publish(&env);
     }
 
+    /// Releases the caller's full staked balance once the lock period
+    /// has elapsed. After successful withdrawal the storage slot is
+    /// cleared — subsequent `unstake` calls panic with `"No stake found"`.
     pub fn unstake(env: Env, user: Address) {
         user.require_auth();
 
