@@ -73,6 +73,10 @@ impl Governance {
     }
 
     /// Casts a vote on a proposal, weighted by the number of badges the voter owns.
+    /// Records a voter's ballot weighted by the number of badges
+    /// the voter owns at the moment of the call. Double-voting is
+    /// blocked via the per-(voter, proposal_id) flag in
+    /// `DataKey::UserVote`.
     pub fn cast_vote(env: Env, voter: Address, proposal_id: u32, support: bool) {
         voter.require_auth();
 
