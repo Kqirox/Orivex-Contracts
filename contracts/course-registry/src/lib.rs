@@ -1,4 +1,7 @@
 #![no_std]
+//! Crate overview — manages the lifecycle of on-chain courses,
+//! their progress records, course completion mint of soulbound
+//! badges, and RewardPool payout triggering.
 use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
 pub mod types;
