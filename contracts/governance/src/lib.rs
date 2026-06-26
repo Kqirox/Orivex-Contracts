@@ -50,6 +50,9 @@ pub struct ContractUpgraded {
 impl Governance {
     /// Initializes the governance contract with the admin and BadgeNFT contract address.
     /// Must be called once upon deployment.
+    /// Bootstrap with admin and the BadgeNFT contract address used for
+    /// vote-weight computation. The `BADGE_NFT_KEY` symbol constant
+    /// names the instance slot.
     pub fn initialize(env: Env, admin: Address, badge_contract_address: Address) {
         if env.storage().instance().has(&BADGE_NFT_KEY) {
             panic!("Already initialized");
