@@ -79,7 +79,11 @@ mod contract_impl {
         /// * If caller authentication fails
         /// * If caller is not the authorized registry
         /// * If learner already has a badge for this course_id (duplicate minting)
-        pub fn mint_badge(env: Env, caller: Address, learner: Address, course_id: u32) {
+        /// Mint a soulbound Badge token for an authorized caller. The
+    /// function rejects duplicate (learner, course_id) pairs by walking
+    /// the learner's badge vector and panicking on match. This enforces
+    /// one-badge-per-course invariants.
+    pub fn mint_badge(env: Env, caller: Address, learner: Address, course_id: u32) {
             caller.require_auth();
 
             let stored_admin: Address = env
