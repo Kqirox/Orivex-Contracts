@@ -86,6 +86,11 @@ impl CourseRegistry {
 
     /// Registers the RewardPool contract address so the registry can trigger payouts on completion.
     /// Only callable by the Protocol Admin.
+    /// Wires the RewardPool contract address used by `complete_module`.
+    /// Only the Protocol Admin may call this; otherwise the call panics
+    /// with `"Unauthorized: Caller is not the protocol admin"`. The
+    /// RewardPool must additionally whitelist the CourseRegistry via
+    /// `add_approved_spender` before payouts will execute.
     pub fn set_reward_pool_address(env: Env, admin: Address, reward_pool_address: Address) {
         admin.require_auth();
 
