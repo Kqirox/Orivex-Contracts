@@ -1,4 +1,7 @@
 #![no_std]
+//! Crate overview — Build and Explore quests. Build quests are
+//! employer-funded and reviewed per submission. Explore quests are
+//! admin-verified and rewarded out of the RewardPool.
 
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
