@@ -1,4 +1,7 @@
 #![no_std]
+//! Crate overview — stake lock holding and multiplier computation.
+//! Provides `get_multiplier(user)` for cross-contract use by
+//! QuestEngine on review-time payout calculation.
 use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
 pub mod types;
