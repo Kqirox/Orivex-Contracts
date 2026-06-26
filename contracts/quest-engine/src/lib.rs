@@ -276,6 +276,10 @@ impl QuestEngineContract {
     }
 
     /// Allows a learner to submit proof for a build quest.
+    /// Stores a learner's proof hash for the given build quest in
+    /// `DataKey::Submission`. The associated quest must be active and
+    /// of `QuestType::Build`. Re-submission for the same pair panics
+    /// with `"Submission already exists"`.
     pub fn submit_proof(env: Env, learner: Address, quest_id: u32, proof_hash: BytesN<32>) {
         // 1. learner.require_auth()
         learner.require_auth();
