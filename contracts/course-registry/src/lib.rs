@@ -72,6 +72,11 @@ pub struct ContractUpgraded {
 #[contractimpl]
 impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
+    /// Sets the single Protocol Admin in instance storage at deploy time.
+    /// Idempotent guards prevent re-initialization: the function panics if
+    /// `DataKey::Admin` is already present. No auth check is performed
+    /// here on purpose — `initialize` is intended to be called only once
+    /// by the deployer.
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("Already initialized");
