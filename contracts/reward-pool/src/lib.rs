@@ -84,7 +84,11 @@ mod contract_impl {
         /// # Panics
         /// * If contract is already initialized
         /// * If admin authentication fails
-        pub fn initialize(env: Env, admin: Address, token: Address) {
+        /// Stores admin and reward-token addresses in instance storage and
+    /// emits the `PoolInitialized` event. Both addresses are recorded
+    /// on the first call; subsequent calls panic with
+    /// `"Already initialized"`.
+    pub fn initialize(env: Env, admin: Address, token: Address) {
             // 1. Check if already initialized
             if env.storage().instance().has(&DataKey::Admin) {
                 panic!("Already initialized");
