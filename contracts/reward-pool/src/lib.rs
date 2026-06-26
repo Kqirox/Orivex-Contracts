@@ -1,4 +1,7 @@
 #![no_std]
+//! Crate overview — central USDC reward distribution. Holds the
+//! reward-token balance and gates payouts behind an approved-
+//! spender allowlist.
 use soroban_sdk::{contractclient, contractevent, Address, BytesN, Env};
 
 pub mod types;
