@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const QUORUM_BASIS_POINTS: u32 = 3300;
+
 pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 604800;
 //! Crate overview — badge-weighted proposal lifecycle: create,
 //! vote, execute, cancel. Vote weight = number of badges owned at
