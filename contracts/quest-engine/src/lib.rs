@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 //! Crate overview — Build and Explore quests. Build quests are
 //! employer-funded and reviewed per submission. Explore quests are
 //! admin-verified and rewarded out of the RewardPool.
