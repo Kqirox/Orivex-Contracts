@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
 //! Crate overview — manages the lifecycle of on-chain courses,
 //! their progress records, course completion mint of soulbound
 //! badges, and RewardPool payout triggering.
