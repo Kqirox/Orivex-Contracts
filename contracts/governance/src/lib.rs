@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 604800;
 //! Crate overview — badge-weighted proposal lifecycle: create,
 //! vote, execute, cancel. Vote weight = number of badges owned at
 //! the moment of the cast.
