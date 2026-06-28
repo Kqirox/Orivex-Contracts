@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const MAX_QUEST_REWARD: i128 = 100_000_000_0000000;
+
 pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 //! Crate overview — Build and Explore quests. Build quests are
 //! employer-funded and reviewed per submission. Explore quests are
