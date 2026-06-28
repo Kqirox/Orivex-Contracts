@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const MIN_PAYOUT_AMOUNT: i128 = 1;
+
 pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 //! Crate overview — central USDC reward distribution. Holds the
 //! reward-token balance and gates payouts behind an approved-
