@@ -247,3 +247,24 @@ mod contract_impl {
 pub use contract_impl::BadgeNFT;
 
 mod test;
+
+
+// FILE: contracts/stake-vault.rs
+use solana_sdk::prelude::*;
+
+#[derive(Debug, PartialEq)]
+pub struct StakeVault {
+    // ...
+}
+
+impl StakeVault {
+    // Add a new stake to the pool
+    pub fn add_stake(&mut self, amount: u64) {
+        // ...
+    }
+
+    // Calculate the reward multiplier
+    pub fn calculate_multiplier(&self) -> u64 {
+        // ...
+    }
+}
