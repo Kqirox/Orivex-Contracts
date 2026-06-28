@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const TIER_LOW_STAKE_BOUND: i128 = 100;
+
 pub const DEFAULT_LOCK_PERIOD_SECONDS: u64 = 604800;
 //! Crate overview — stake lock holding and multiplier computation.
 //! Provides `get_multiplier(user)` for cross-contract use by
