@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const TIER_HIGH_STAKE_BOUND: i128 = 500;
+
 pub const TIER_LOW_STAKE_BOUND: i128 = 100;
 
 pub const DEFAULT_LOCK_PERIOD_SECONDS: u64 = 604800;
