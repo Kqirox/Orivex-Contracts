@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const MAX_BADGES_PER_LEARNER: u32 = 64;
 //! Crate overview — soulbound badge issuance, retrieval, and
 //! admin revocation. Implements `BadgeNFTInterface` so dependents
 //! can call it through a generated client.
