@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const DEFAULT_TOTAL_MODULES_BOUND: u32 = 1000;
+
 pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
 //! Crate overview — manages the lifecycle of on-chain courses,
 //! their progress records, course completion mint of soulbound
