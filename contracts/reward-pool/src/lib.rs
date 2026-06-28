@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 //! Crate overview — central USDC reward distribution. Holds the
 //! reward-token balance and gates payouts behind an approved-
 //! spender allowlist.
