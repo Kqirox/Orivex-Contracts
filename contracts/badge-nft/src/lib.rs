@@ -214,7 +214,10 @@ mod contract_impl {
         ///
         /// # Returns
         /// Number of badges the learner owns.
-        pub fn get_badge_count(env: Env, learner: Address) -> u32 {
+        /// Returns `badges.len()` for a learner, computing the count
+    /// via the canonical `Vec::len` path. Equivalent to iterating
+    /// `get_badges` and counting, but cheaper for the hot path.
+    pub fn get_badge_count(env: Env, learner: Address) -> u32 {
             let badges = Self::get_badges(env, learner);
             badges.len()
         }
