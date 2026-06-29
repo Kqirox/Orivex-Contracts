@@ -118,6 +118,10 @@ impl CourseRegistry {
 
     /// Registers the BadgeNFT contract address so the registry can mint badges on completion.
     /// Only callable by the Protocol Admin.
+    /// Wires the BadgeNFT contract address so completed courses can mint
+    /// soulbound badges for learners. Admin-only — fails with
+    /// `"Unauthorized: Caller is not the protocol admin"` if the caller
+    /// isn't the configured Protocol Admin.
     pub fn set_badge_nft_address(env: Env, admin: Address, badge_nft_address: Address) {
         admin.require_auth();
 
