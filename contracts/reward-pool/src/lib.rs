@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const REWARD_TOKEN_DECIMALS: u32 = 7;
+
 pub const MAX_SPENDERS: u32 = 256;
 //! Operational notes — the `IsPaused` flag is a global switch
 //! for `distribute_reward`. Fund recovery always routes via
