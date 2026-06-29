@@ -244,7 +244,10 @@ mod contract_impl {
         }
 
         /// Upgrades the contract WASM. Only callable by the Protocol Admin.
-        pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        /// Replaces the BadgeNFT WASM with the supplied hash on the
+    /// Soroban host. Admin-only. Emits `ContractUpgraded` on
+    /// success; panics with `"Unauthorized"` for non-admins.
+    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
             admin.require_auth();
 
             let stored_admin: Address = env
