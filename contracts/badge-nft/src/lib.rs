@@ -230,7 +230,10 @@ mod contract_impl {
         ///
         /// # Returns
         /// true if the learner has the badge, false otherwise.
-        pub fn has_badge(env: Env, learner: Address, course_id: u32) -> bool {
+        /// Returns true when the learner already holds a badge for the
+    /// given `course_id`. The check is a linear scan over the
+    /// learner's badge vector; bounded by `MAX_BADGES_PER_LEARNER`.
+    pub fn has_badge(env: Env, learner: Address, course_id: u32) -> bool {
             let badges = Self::get_badges(env, learner);
             for badge in badges.iter() {
                 if badge.course_id == course_id {
