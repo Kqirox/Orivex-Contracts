@@ -127,6 +127,10 @@ impl QuestEngineContract {
     /// * If contract is not initialized
     /// * If admin does not match stored admin
     /// * If admin authentication fails
+    /// Sets the `IsPaused` flag in instance storage as a circuit
+    /// breaker. Admin-only. When true, `review_submission` and
+    /// `batch_review_submissions` panic early with
+    /// `"Contract is paused"`.
     pub fn set_pause(env: Env, admin: Address, status: bool) {
         // 1. Fetch 'Admin' address from Instance storage
         let stored_admin: Address = env
