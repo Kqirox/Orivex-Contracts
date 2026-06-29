@@ -298,6 +298,9 @@ impl CourseRegistry {
     }
 
     /// Returns true if the learner has completed all modules in the course.
+    /// Returns true when the learner's stored progress is at least
+    /// `course.total_modules`. The check is defensive — progress
+    /// values exceeding total_modules also count as finished.
     pub fn is_course_finished(env: Env, learner: Address, id: u32) -> bool {
         let course: Course = env
             .storage()
