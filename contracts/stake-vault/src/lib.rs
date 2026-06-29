@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const STAKE_TIER_LOW_BPS: u32 = 120;
+
 pub const STAKE_TIER_NONE_BPS: u32 = 100;
 //! Operational notes — multiplier calculation is a 3-tier
 //! lookup bound by `TIER_LOW_STAKE_BOUND` and
