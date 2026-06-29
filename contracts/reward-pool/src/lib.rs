@@ -1,4 +1,9 @@
 #![no_std]
+//! Operational notes — the `IsPaused` flag is a global switch
+//! for `distribute_reward`. Fund recovery always routes via
+//! `emergency_sweep`, never via direct token transfer. Spender
+//! list entries are stored in persistent storage and persist
+//! across upgrades.
 
 pub const MIN_PAYOUT_AMOUNT: i128 = 1;
 
