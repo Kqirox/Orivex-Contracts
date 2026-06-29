@@ -1,4 +1,9 @@
 #![no_std]
+//! Operational notes — storage costs are amortised over a
+//! single `Course` struct per ID and a separate progress
+//! record per (learner, course). Roster growth is bounded by
+//! Soroban's `u32` ID space and the 7-byte constraint for
+//! metadata references.
 
 pub const DEFAULT_TOTAL_MODULES_BOUND: u32 = 1000;
 
