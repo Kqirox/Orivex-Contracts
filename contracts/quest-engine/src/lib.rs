@@ -286,6 +286,9 @@ impl QuestEngineContract {
     }
 
     /// Returns a quest by its ID.
+    /// Reads a Quest struct from persistent storage by ID. Returns
+    /// `None` when the ID has no record so callers can branch on
+    /// presence rather than panic.
     pub fn get_quest(env: Env, quest_id: u32) -> Option<Quest> {
         env.storage().persistent().get(&DataKey::Quest(quest_id))
     }
