@@ -195,6 +195,10 @@ impl CourseRegistry {
     }
 
     /// Updates the IPFS metadata hash for a course. Only callable by the course instructor.
+    /// Replaces a course's IPFS metadata hash with the supplied value.
+    /// Only the current instructor is permitted to update; the function
+    /// uses `course.instructor.require_auth()` for that check. The new
+    /// hash must be a 32-byte BytesN pointing at IPFS CID metadata.
     pub fn update_metadata(env: Env, id: u32, new_hash: BytesN<32>) {
         let mut course: Course = env
             .storage()
