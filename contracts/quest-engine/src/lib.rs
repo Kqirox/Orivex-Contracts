@@ -456,6 +456,11 @@ impl QuestEngineContract {
         .publish(&env);
     }
 
+    /// Employer-only cancellation of an in-flight Build quest.
+    /// Returns the locked `reward_amount` to the employer's wallet
+    /// via the QuestEngine's token client and marks the quest
+    /// inactive. Panics with `"Quest already inactive"` if the
+    /// quest is already inactive.
     pub fn refund_quest(env: Env, employer: Address, quest_id: u32) {
         employer.require_auth();
 
