@@ -249,6 +249,10 @@ impl CourseRegistry {
     }
 
     /// Helper to check the current total number of courses.
+    /// Returns the total number of courses currently registered
+    /// on-chain. Reads from `DataKey::CourseCount` instance storage
+    /// and defaults to 0 if absent (e.g. before the first
+    /// `create_course` call).
     pub fn course_count(env: Env) -> u32 {
         env.storage()
             .instance()
