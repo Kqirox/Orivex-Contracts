@@ -72,6 +72,9 @@ impl Governance {
     }
 
     /// Returns the proposal stored for the given proposal ID.
+    /// Reads a Proposal struct from persistent storage by ID. The
+    /// function panics with `"Proposal not found"` when no
+    /// matching `DataKey::Proposal(id)` exists.
     pub fn get_proposal(env: Env, proposal_id: u32) -> Proposal {
         env.storage()
             .persistent()
