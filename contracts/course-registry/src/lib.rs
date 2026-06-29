@@ -328,6 +328,10 @@ impl CourseRegistry {
     ///
     /// # Panics
     /// Panics if the course ID is invalid (course doesn't exist in storage)
+    /// Reads a Course struct from persistent storage by ID. The
+    /// function panics with `"Course not found"` when the ID has
+    /// no record, which is the deliberate failure mode for an
+    /// out-of-bounds lookup.
     pub fn get_course(env: Env, id: u32) -> Course {
         // 1. Construct DataKey::Course(id)
         let key = DataKey::Course(id);
