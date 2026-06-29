@@ -345,6 +345,10 @@ impl CourseRegistry {
     }
 
     /// Returns a learner's completed module count for a course. Returns 0 if the learner has not enrolled.
+    /// Reads a learner's current module-completion count for a
+    /// course. Returns 0 when the learner has not enrolled (no
+    /// matching `DataKey::Progress` slot), avoiding the need to
+    /// explicitly call `enroll`.
     pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
         let key = DataKey::Progress(learner, id);
         env.storage().persistent().get(&key).unwrap_or(0)
