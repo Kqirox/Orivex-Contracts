@@ -261,6 +261,10 @@ impl CourseRegistry {
     }
 
     /// Toggles a course's active status. Only callable by the Protocol Admin.
+    /// Toggles the active flag on the target course and emits
+    /// `CourseStatusChanged { id, active }`. Admin-only. The status
+    /// change is persisted in `DataKey::Course(id)` and the course
+    /// remains in storage so prior learner progress is preserved.
     pub fn set_course_status(env: Env, admin: Address, id: u32, active: bool) {
         // 1. Authenticate the admin cryptographically
         admin.require_auth();
