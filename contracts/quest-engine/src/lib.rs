@@ -499,6 +499,11 @@ impl QuestEngineContract {
 
     /// Approves multiple learner submissions in a single transaction.
     /// Executes the full fee-adjusted payout for each learner.
+    /// Approves a vector of learner submissions against a single
+    /// quest. Each submission must be `Pending`; the function
+    /// panics on the first non-pending submission. Emits both
+    /// individual `SubmissionReviewed` events and a single
+    /// `BatchReviewed` summary event with the approved count.
     pub fn batch_review_submissions(
         env: Env,
         employer: Address,
