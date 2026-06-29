@@ -196,7 +196,10 @@ mod contract_impl {
         ///
         /// # Returns
         /// Vector of Badge structs. Returns empty vector if learner has no badges.
-        pub fn get_badges(env: Env, learner: Address) -> Vec<Badge> {
+        /// Returns the entire badge vector for a learner. An empty
+    /// vector is returned when the learner has no badges so callers
+    /// can iterate safely without checking length.
+    pub fn get_badges(env: Env, learner: Address) -> Vec<Badge> {
             let badges_key = DataKey::UserBadges(learner);
             env.storage()
                 .persistent()
