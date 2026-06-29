@@ -481,6 +481,10 @@ impl CourseRegistry {
     }
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    /// Replaces the contract WASM with the supplied hash on the
+    /// Soroban host. Admin-only — non-admins panic with
+    /// `"Unauthorized"`. The `ContractUpgraded` event is published
+    /// with both the admin's address and the new WASM hash.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
         admin.require_auth();
 
