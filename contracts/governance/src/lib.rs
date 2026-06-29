@@ -142,6 +142,10 @@ impl Governance {
     }
 
     /// Cancels an active proposal. Only callable by the proposer or the Protocol Admin.
+    /// Proposer- or admin-only cancellation of an active proposal.
+    /// Sets `proposal.executed = true` (the canonical "locked"
+    /// state) and emits `ProposalCancelled`. Rejects cancel
+    /// attempts after voting ends or after execution.
     pub fn cancel_proposal(env: Env, caller: Address, proposal_id: u32) {
         caller.require_auth();
 
