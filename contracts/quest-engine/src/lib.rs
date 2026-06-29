@@ -340,6 +340,9 @@ impl QuestEngineContract {
     }
 
     /// Returns a submission by learner and quest ID.
+    /// Reads a learner's Submission struct for a given quest.
+    /// `None` indicates no submission has been recorded yet for the
+    /// (learner, quest_id) pair.
     pub fn get_submission(env: Env, learner: Address, quest_id: u32) -> Option<Submission> {
         env.storage()
             .persistent()
