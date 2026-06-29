@@ -228,6 +228,10 @@ impl QuestEngineContract {
     /// * If admin authentication fails
     /// * If admin does not match stored admin
     /// * If contract is not initialized
+    /// Admin-only creation of an Explore Quest that the RewardPool
+    /// will fund on verification. The employer field is set to the
+    /// admin so that downstream payout flows can route via the
+    /// RewardPool's `distribute_reward` call.
     pub fn create_explore_quest(
         env: Env,
         admin: Address,
