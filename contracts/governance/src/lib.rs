@@ -1,4 +1,9 @@
 #![no_std]
+//! Operational notes — proposals progress through: created →
+//! voting → (executed | cancelled). Cancellation locks the
+//! proposal via `executed = true`. Vote weight is fetched at
+//! call time so badge holdings at the moment of the cast
+//! determine the weight.
 
 pub const QUORUM_BASIS_POINTS: u32 = 3300;
 
