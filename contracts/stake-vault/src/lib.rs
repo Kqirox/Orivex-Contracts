@@ -1,4 +1,9 @@
 #![no_std]
+//! Operational notes — multiplier calculation is a 3-tier
+//! lookup bound by `TIER_LOW_STAKE_BOUND` and
+//! `TIER_HIGH_STAKE_BOUND`. Re-staking resets the lock
+//! timestamp. Lock period is one week by default
+//! (`DEFAULT_LOCK_PERIOD_SECONDS`).
 
 pub const TIER_HIGH_STAKE_BOUND: i128 = 500;
 
