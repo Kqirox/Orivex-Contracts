@@ -121,6 +121,9 @@ impl Governance {
     }
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    /// Replaces the Governance WASM with the supplied hash on the
+    /// Soroban host. Admin-only. Emits `ContractUpgraded` on
+    /// successful deployment.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
         admin.require_auth();
 
