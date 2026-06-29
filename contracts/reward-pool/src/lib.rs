@@ -163,7 +163,10 @@ mod contract_impl {
         /// * If contract is not initialized
         /// * If admin does not match stored admin
         /// * If admin authentication fails
-        pub fn set_pause(env: Env, admin: Address, status: bool) {
+        /// Sets the `IsPaused` flag in instance storage as a circuit
+    /// breaker. Admin-only. When `IsPaused` is true,
+    /// `distribute_reward` returns early with `"Contract is paused"`.
+    pub fn set_pause(env: Env, admin: Address, status: bool) {
             // 1. Fetch 'Admin' address from Instance storage
             let stored_admin: Address = env
                 .storage()
