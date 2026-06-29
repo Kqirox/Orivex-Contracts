@@ -176,6 +176,9 @@ impl StakeVault {
         }
     }
 
+    /// Replaces the StakeVault WASM with the supplied hash on the
+    /// Soroban host. Admin-only. Emits `ContractUpgraded` on
+    /// successful deployment.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
         admin.require_auth();
 
