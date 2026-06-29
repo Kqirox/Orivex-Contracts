@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const BADGE_MINTED_AT_DEFAULT: u64 = 0;
 //! Operational notes — badge revocation is irreversible from
 //! this contract; off-chain records must snapshot
 //! `badge.course_id` and `badge.minted_at`. Badge lookups are
