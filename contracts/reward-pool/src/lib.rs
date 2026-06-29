@@ -124,7 +124,11 @@ mod contract_impl {
         /// * If contract is not initialized
         /// * If admin does not match stored admin
         /// * If admin authentication fails
-        pub fn add_approved_spender(env: Env, admin: Address, spender: Address) {
+        /// Whitelist a caller contract so future `distribute_reward`
+    /// calls from that contract's address are authorised. The
+    /// spender is recorded under `DataKey::Spender(address)` in
+    /// persistent storage. Re-whitelisting is allowed (idempotent).
+    pub fn add_approved_spender(env: Env, admin: Address, spender: Address) {
             // 1. Fetch 'Admin' address from Instance storage
             let stored_admin: Address = env
                 .storage()
