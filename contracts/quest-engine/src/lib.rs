@@ -1,4 +1,9 @@
 #![no_std]
+//! Operational notes — review paths cross-call
+//! `StakeVault.get_multiplier` for payout scaling. Explore-quest
+//! payouts route via `RewardPool.distribute_reward` (which
+//! requires the QuestEngine to be whitelisted on the
+//! RewardPool).
 
 pub const MAX_QUEST_REWARD: i128 = 100_000_000_0000000;
 
