@@ -49,6 +49,10 @@ pub struct ContractUpgraded {
 
 #[contractimpl]
 impl StakeVault {
+    /// Initializes the StakeVault with admin and reward token
+    /// addresses and emits `StakeVaultInitialized`. Admin-only at
+    /// deploy time. Re-initialization panics with
+    /// `"Already initialized"`.
     pub fn initialize(env: Env, admin: Address, token: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("Already initialized");
