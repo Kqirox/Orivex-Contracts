@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const MAX_SPENDERS: u32 = 256;
 //! Operational notes — the `IsPaused` flag is a global switch
 //! for `distribute_reward`. Fund recovery always routes via
 //! `emergency_sweep`, never via direct token transfer. Spender
