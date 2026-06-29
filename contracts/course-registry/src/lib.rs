@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const INITIAL_COURSE_ID: u32 = 1;
+
 pub const MAX_COURSE_ID: u32 = u32::MAX;
 //! Operational notes — storage costs are amortised over a
 //! single `Course` struct per ID and a separate progress
