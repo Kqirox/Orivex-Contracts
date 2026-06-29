@@ -298,7 +298,11 @@ mod contract_impl {
         /// * If contract is not initialized
         /// * If admin does not match stored admin
         /// * If admin authentication fails
-        pub fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address) {
+        /// Transfers the entire token balance of the contract to a
+    /// designated recovery wallet. Admin-only. Emits
+    /// `EmergencySweep` with the swept amount. Intended for
+    /// incidents requiring a full token rescue.
+    pub fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address) {
             // 1. admin.require_auth()
             admin.require_auth();
 
