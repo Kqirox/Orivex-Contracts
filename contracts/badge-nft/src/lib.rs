@@ -1,4 +1,9 @@
 #![no_std]
+//! Operational notes — badge revocation is irreversible from
+//! this contract; off-chain records must snapshot
+//! `badge.course_id` and `badge.minted_at`. Badge lookups are
+//! linear scans; the `MAX_BADGES_PER_LEARNER` constant guards
+//! the iteration budget.
 
 pub const MAX_BADGES_PER_LEARNER: u32 = 64;
 //! Crate overview — soulbound badge issuance, retrieval, and
