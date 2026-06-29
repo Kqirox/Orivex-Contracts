@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const MAX_COURSE_ID: u32 = u32::MAX;
 //! Operational notes — storage costs are amortised over a
 //! single `Course` struct per ID and a separate progress
 //! record per (learner, course). Roster growth is bounded by
