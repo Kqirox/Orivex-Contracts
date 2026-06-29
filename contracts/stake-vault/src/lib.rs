@@ -153,6 +153,10 @@ impl StakeVault {
         .publish(&env);
     }
 
+    /// Returns a basis-points multiplier based on the user's staked
+    /// amount. The scheme uses three tiers: 100 (default, 1.0x),
+    /// 120 (≥100 stake, 1.2x), and 200 (≥500 stake, 2.0x). Quest
+    /// review paths consult this value to scale payouts.
     pub fn get_multiplier(env: Env, user: Address) -> u32 {
         let stake_info: StakeInfo = env
             .storage()
