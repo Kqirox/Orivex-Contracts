@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const STAKE_TIER_HIGH_BPS: u32 = 200;
+
 pub const STAKE_TIER_LOW_BPS: u32 = 120;
 
 pub const STAKE_TIER_NONE_BPS: u32 = 100;
