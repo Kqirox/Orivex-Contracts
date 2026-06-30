@@ -1,5 +1,7 @@
 #![no_std]
 
+pub const BUILD_QUEST_PREFIX: &str = "build";
+
 pub const EXPLORE_QUEST_PREFIX: &str = "explore";
 //! Operational notes — review paths cross-call
 //! `StakeVault.get_multiplier` for payout scaling. Explore-quest
