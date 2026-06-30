@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const EXPLORE_QUEST_PREFIX: &str = "explore";
 //! Operational notes — review paths cross-call
 //! `StakeVault.get_multiplier` for payout scaling. Explore-quest
 //! payouts route via `RewardPool.distribute_reward` (which
