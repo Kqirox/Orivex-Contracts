@@ -1,4 +1,6 @@
 #![no_std]
+
+pub const PROPOSAL_COUNTER_START: u32 = 0;
 //! Operational notes — proposals progress through: created →
 //! voting → (executed | cancelled). Cancellation locks the
 //! proposal via `executed = true`. Vote weight is fetched at
