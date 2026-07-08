@@ -5,20 +5,20 @@ pub const STAKE_TIER_HIGH_BPS: u32 = 200;
 pub const STAKE_TIER_LOW_BPS: u32 = 120;
 
 pub const STAKE_TIER_NONE_BPS: u32 = 100;
-//! Operational notes — multiplier calculation is a 3-tier
-//! lookup bound by `TIER_LOW_STAKE_BOUND` and
-//! `TIER_HIGH_STAKE_BOUND`. Re-staking resets the lock
-//! timestamp. Lock period is one week by default
-//! (`DEFAULT_LOCK_PERIOD_SECONDS`).
+// Operational notes — multiplier calculation is a 3-tier
+// lookup bound by `TIER_LOW_STAKE_BOUND` and
+// `TIER_HIGH_STAKE_BOUND`. Re-staking resets the lock
+// timestamp. Lock period is one week by default
+// (`DEFAULT_LOCK_PERIOD_SECONDS`).
 
 pub const TIER_HIGH_STAKE_BOUND: i128 = 500;
 
 pub const TIER_LOW_STAKE_BOUND: i128 = 100;
 
 pub const DEFAULT_LOCK_PERIOD_SECONDS: u64 = 604800;
-//! Crate overview — stake lock holding and multiplier computation.
-//! Provides `get_multiplier(user)` for cross-contract use by
-//! QuestEngine on review-time payout calculation.
+// Crate overview — stake lock holding and multiplier computation.
+// Provides `get_multiplier(user)` for cross-contract use by
+// QuestEngine on review-time payout calculation.
 use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
 pub mod types;

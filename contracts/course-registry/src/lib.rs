@@ -3,18 +3,18 @@
 pub const INITIAL_COURSE_ID: u32 = 1;
 
 pub const MAX_COURSE_ID: u32 = u32::MAX;
-//! Operational notes — storage costs are amortised over a
-//! single `Course` struct per ID and a separate progress
-//! record per (learner, course). Roster growth is bounded by
-//! Soroban's `u32` ID space and the 7-byte constraint for
-//! metadata references.
+// Operational notes — storage costs are amortised over a
+// single `Course` struct per ID and a separate progress
+// record per (learner, course). Roster growth is bounded by
+// Soroban's `u32` ID space and the 7-byte constraint for
+// metadata references.
 
 pub const DEFAULT_TOTAL_MODULES_BOUND: u32 = 1000;
 
 pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
-//! Crate overview — manages the lifecycle of on-chain courses,
-//! their progress records, course completion mint of soulbound
-//! badges, and RewardPool payout triggering.
+// Crate overview — manages the lifecycle of on-chain courses,
+// their progress records, course completion mint of soulbound
+// badges, and RewardPool payout triggering.
 use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
 pub mod types;

@@ -1,18 +1,18 @@
 #![no_std]
 
 pub const PROPOSAL_COUNTER_START: u32 = 0;
-//! Operational notes — proposals progress through: created →
-//! voting → (executed | cancelled). Cancellation locks the
-//! proposal via `executed = true`. Vote weight is fetched at
-//! call time so badge holdings at the moment of the cast
-//! determine the weight.
+// Operational notes — proposals progress through: created →
+// voting → (executed | cancelled). Cancellation locks the
+// proposal via `executed = true`. Vote weight is fetched at
+// call time so badge holdings at the moment of the cast
+// determine the weight.
 
 pub const QUORUM_BASIS_POINTS: u32 = 3300;
 
 pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 604800;
-//! Crate overview — badge-weighted proposal lifecycle: create,
-//! vote, execute, cancel. Vote weight = number of badges owned at
-//! the moment of the cast.
+// Crate overview — badge-weighted proposal lifecycle: create,
+// vote, execute, cancel. Vote weight = number of badges owned at
+// the moment of the cast.
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contracttype, symbol_short, Address,
     BytesN, Env, Symbol, Vec,

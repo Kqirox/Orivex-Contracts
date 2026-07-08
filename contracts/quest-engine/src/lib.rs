@@ -3,18 +3,18 @@
 pub const BUILD_QUEST_PREFIX: &str = "build";
 
 pub const EXPLORE_QUEST_PREFIX: &str = "explore";
-//! Operational notes — review paths cross-call
-//! `StakeVault.get_multiplier` for payout scaling. Explore-quest
-//! payouts route via `RewardPool.distribute_reward` (which
-//! requires the QuestEngine to be whitelisted on the
-//! RewardPool).
+// Operational notes — review paths cross-call
+// `StakeVault.get_multiplier` for payout scaling. Explore-quest
+// payouts route via `RewardPool.distribute_reward` (which
+// requires the QuestEngine to be whitelisted on the
+// RewardPool).
 
-pub const MAX_QUEST_REWARD: i128 = 100_000_000_0000000;
+pub const MAX_QUEST_REWARD: i128 = 1_000_000_000_000_000;
 
 pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
-//! Crate overview — Build and Explore quests. Build quests are
-//! employer-funded and reviewed per submission. Explore quests are
-//! admin-verified and rewarded out of the RewardPool.
+// Crate overview — Build and Explore quests. Build quests are
+// employer-funded and reviewed per submission. Explore quests are
+// admin-verified and rewarded out of the RewardPool.
 
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};

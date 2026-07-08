@@ -1,16 +1,16 @@
 #![no_std]
 
 pub const BADGE_MINTED_AT_DEFAULT: u64 = 0;
-//! Operational notes — badge revocation is irreversible from
-//! this contract; off-chain records must snapshot
-//! `badge.course_id` and `badge.minted_at`. Badge lookups are
-//! linear scans; the `MAX_BADGES_PER_LEARNER` constant guards
-//! the iteration budget.
+// Operational notes — badge revocation is irreversible from
+// this contract; off-chain records must snapshot
+// `badge.course_id` and `badge.minted_at`. Badge lookups are
+// linear scans; the `MAX_BADGES_PER_LEARNER` constant guards
+// the iteration budget.
 
 pub const MAX_BADGES_PER_LEARNER: u32 = 64;
-//! Crate overview — soulbound badge issuance, retrieval, and
-//! admin revocation. Implements `BadgeNFTInterface` so dependents
-//! can call it through a generated client.
+// Crate overview — soulbound badge issuance, retrieval, and
+// admin revocation. Implements `BadgeNFTInterface` so dependents
+// can call it through a generated client.
 use soroban_sdk::{contractclient, contractevent, Address, Env, Vec};
 
 pub mod types;
@@ -75,9 +75,9 @@ mod contract_impl {
         /// # Panics
         /// * If contract is already initialized
         /// Bound-checked initializer used by CourseRegistry to deploy
-    /// this contract. Subsequent calls panic via the `Already initialized`
-    /// guard.
-    pub fn initialize(env: Env, admin: Address) {
+        /// this contract. Subsequent calls panic via the `Already initialized`
+        /// guard.
+        pub fn initialize(env: Env, admin: Address) {
             if env.storage().instance().has(&DataKey::Admin) {
                 panic!("Already initialized");
             }
@@ -92,10 +92,10 @@ mod contract_impl {
         /// * If caller is not the authorized registry
         /// * If learner already has a badge for this course_id (duplicate minting)
         /// Mint a soulbound Badge token for an authorized caller. The
-    /// function rejects duplicate (learner, course_id) pairs by walking
-    /// the learner's badge vector and panicking on match. This enforces
-    /// one-badge-per-course invariants.
-    pub fn mint_badge(env: Env, caller: Address, learner: Address, course_id: u32) {
+        /// function rejects duplicate (learner, course_id) pairs by walking
+        /// the learner's badge vector and panicking on match. This enforces
+        /// one-badge-per-course invariants.
+        pub fn mint_badge(env: Env, caller: Address, learner: Address, course_id: u32) {
             caller.require_auth();
 
             let stored_admin: Address = env
@@ -149,9 +149,9 @@ mod contract_impl {
         /// * If caller authentication fails
         /// * If caller is not the authorized registry
         /// Revoke a previously-minted badge by removing the matching entry
-    /// from the learner's `Badge` vector. If the badge is not present,
-    /// the function is a no-op (no event emitted, no panic).
-    pub fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32) {
+        /// from the learner's `Badge` vector. If the badge is not present,
+        /// the function is a no-op (no event emitted, no panic).
+        pub fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32) {
             // 1. admin.require_auth()
             admin.require_auth();
 
@@ -204,9 +204,9 @@ mod contract_impl {
         /// # Returns
         /// Vector of Badge structs. Returns empty vector if learner has no badges.
         /// Returns the entire badge vector for a learner. An empty
-    /// vector is returned when the learner has no badges so callers
-    /// can iterate safely without checking length.
-    pub fn get_badges(env: Env, learner: Address) -> Vec<Badge> {
+        /// vector is returned when the learner has no badges so callers
+        /// can iterate safely without checking length.
+        pub fn get_badges(env: Env, learner: Address) -> Vec<Badge> {
             let badges_key = DataKey::UserBadges(learner);
             env.storage()
                 .persistent()
@@ -222,9 +222,9 @@ mod contract_impl {
         /// # Returns
         /// Number of badges the learner owns.
         /// Returns `badges.len()` for a learner, computing the count
-    /// via the canonical `Vec::len` path. Equivalent to iterating
-    /// `get_badges` and counting, but cheaper for the hot path.
-    pub fn get_badge_count(env: Env, learner: Address) -> u32 {
+        /// via the canonical `Vec::len` path. Equivalent to iterating
+        /// `get_badges` and counting, but cheaper for the hot path.
+        pub fn get_badge_count(env: Env, learner: Address) -> u32 {
             let badges = Self::get_badges(env, learner);
             badges.len()
         }
@@ -238,9 +238,9 @@ mod contract_impl {
         /// # Returns
         /// true if the learner has the badge, false otherwise.
         /// Returns true when the learner already holds a badge for the
-    /// given `course_id`. The check is a linear scan over the
-    /// learner's badge vector; bounded by `MAX_BADGES_PER_LEARNER`.
-    pub fn has_badge(env: Env, learner: Address, course_id: u32) -> bool {
+        /// given `course_id`. The check is a linear scan over the
+        /// learner's badge vector; bounded by `MAX_BADGES_PER_LEARNER`.
+        pub fn has_badge(env: Env, learner: Address, course_id: u32) -> bool {
             let badges = Self::get_badges(env, learner);
             for badge in badges.iter() {
                 if badge.course_id == course_id {
@@ -252,9 +252,9 @@ mod contract_impl {
 
         /// Upgrades the contract WASM. Only callable by the Protocol Admin.
         /// Replaces the BadgeNFT WASM with the supplied hash on the
-    /// Soroban host. Admin-only. Emits `ContractUpgraded` on
-    /// success; panics with `"Unauthorized"` for non-admins.
-    pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        /// Soroban host. Admin-only. Emits `ContractUpgraded` on
+        /// success; panics with `"Unauthorized"` for non-admins.
+        pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
             admin.require_auth();
 
             let stored_admin: Address = env
