@@ -1,78 +1,132 @@
+//! # Reward Pool Contract
+//!
+//! Central USDC reward distribution hub for the Orivex protocol.
+//! Holds the reward-token balance and gates all payouts behind an
+//! approved-spender allowlist, so only whitelisted contracts
+//! (e.g. `CourseRegistry`, `QuestEngine`) can call
+//! `distribute_reward`.
+//!
+//! ## Operational notes
+//!
+//! * The [`IsPaused`](types::DataKey::IsPaused) flag is a global
+//!   circuit-breaker for `distribute_reward`.
+//! * Fund recovery always routes through `emergency_sweep`; never
+//!   via direct token transfer.
+//! * Spender-list entries live in **persistent** storage and survive
+//!   contract upgrades.
+//!
+//! ## Storage layout
+//!
+//! | Key | Tier | Type | Description |
+//! |-----|------|------|-------------|
+//! | `DataKey::Admin` | Instance | `Address` | Protocol admin |
+//! | `DataKey::Token` | Instance | `Address` | SAC reward token |
+//! | `DataKey::Spender(addr)` | Persistent | `bool` | Whitelist flag |
+//! | `DataKey::IsPaused` | Instance | `bool` | Pause switch |
+
 #![no_std]
 
+/// Number of decimal places used by the reward token (Stellar standard).
 pub const REWARD_TOKEN_DECIMALS: u32 = 7;
 
+/// Maximum number of addresses that can be whitelisted as approved spenders.
 pub const MAX_SPENDERS: u32 = 256;
-// Operational notes — the `IsPaused` flag is a global switch
-// for `distribute_reward`. Fund recovery always routes via
-// `emergency_sweep`, never via direct token transfer. Spender
-// list entries are stored in persistent storage and persist
-// across upgrades.
 
+/// Minimum valid payout amount (inclusive). Calls with `amount <= 0` panic.
 pub const MIN_PAYOUT_AMOUNT: i128 = 1;
 
+/// Platform fee expressed in basis points (1500 bp = 15 %).
+/// Applied by callers (e.g. `QuestEngine`) before invoking `distribute_reward`.
 pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
-// Crate overview — central USDC reward distribution. Holds the
-// reward-token balance and gates payouts behind an approved-
-// spender allowlist.
 use soroban_sdk::{contractclient, contractevent, Address, BytesN, Env};
 
 pub mod types;
 
+/// Public interface for the RewardPool contract.
+///
+/// `#[contractclient]` generates `RewardPoolClient` from this trait so that
+/// other contracts (e.g. `CourseRegistry`, `QuestEngine`) can trigger payouts
+/// via cross-contract calls without importing the concrete implementation.
 #[contractclient(name = "RewardPoolClient")]
 pub trait RewardPoolInterface {
+    /// See [`contract_impl::RewardPool::initialize`].
     fn initialize(env: Env, admin: Address, token: Address);
+    /// See [`contract_impl::RewardPool::add_approved_spender`].
     fn add_approved_spender(env: Env, admin: Address, spender: Address);
+    /// See [`contract_impl::RewardPool::set_pause`].
     fn set_pause(env: Env, admin: Address, status: bool);
+    /// See [`contract_impl::RewardPool::distribute_reward`].
     fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128);
+    /// See [`contract_impl::RewardPool::fund_pool`].
     fn fund_pool(env: Env, donor: Address, amount: i128);
+    /// See [`contract_impl::RewardPool::emergency_sweep`].
     fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address);
+    /// See [`contract_impl::RewardPool::upgrade_contract`].
     fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>);
 }
 
+/// Emitted once when the contract is successfully initialized.
 #[contractevent]
 pub struct PoolInitialized {
+    /// Protocol admin address recorded at initialization.
     #[topic]
     pub admin: Address,
+    /// SAC reward-token address recorded at initialization.
     #[topic]
     pub token: Address,
 }
 
+/// Emitted when a new address is added to the approved-spender whitelist.
 #[contractevent]
 pub struct SpenderAdded {
+    /// The newly whitelisted spender address.
     #[topic]
     pub spender: Address,
 }
 
+/// Emitted on every successful `distribute_reward` call.
 #[contractevent]
 pub struct RewardDistributed {
+    /// Whitelisted spender contract that triggered the payout.
     #[topic]
     pub caller: Address,
+    /// Learner address that received the tokens.
     #[topic]
     pub learner: Address,
+    /// Token amount transferred (in reward-token decimals).
     pub amount: i128,
 }
 
+/// Emitted when a donor tops up the pool's token balance.
 #[contractevent]
 pub struct PoolFunded {
+    /// Donor address that sent the tokens.
     #[topic]
     pub donor: Address,
+    /// Amount donated (in reward-token decimals).
     pub amount: i128,
 }
 
+/// Emitted when the admin drains the entire pool balance to a recovery wallet.
 #[contractevent]
 pub struct EmergencySweep {
+    /// Admin who authorized the sweep.
     #[topic]
     pub admin: Address,
+    /// Wallet that received the swept tokens.
     #[topic]
     pub recovery_wallet: Address,
+    /// Full token balance that was swept.
     pub amount: i128,
 }
 
+/// Emitted when the contract WASM is upgraded.
 #[contractevent]
 pub struct ContractUpgraded {
+    /// Admin who authorized the upgrade.
     #[topic]
     pub admin: Address,
+    /// SHA-256 hash of the new WASM blob.
     pub new_wasm_hash: BytesN<32>,
 }
 
@@ -91,128 +145,135 @@ mod contract_impl {
 
     #[contractimpl]
     impl RewardPool {
-        /// Initializes the RewardPool contract with admin and token addresses.
+        /// Initializes the RewardPool contract with the admin and reward-token addresses.
+        ///
+        /// Stores both addresses in instance storage and emits [`PoolInitialized`].
+        /// Must be called exactly once after deployment; subsequent calls panic.
         ///
         /// # Arguments
-        /// * `admin` - The admin address that will have administrative control
-        /// * `token` - The SAC token address to be used as reward token
+        ///
+        /// * `admin` — The protocol admin address (required auth).
+        /// * `token` — The SAC reward-token address.
         ///
         /// # Panics
-        /// * If contract is already initialized
-        /// * If admin authentication fails
-        /// Stores admin and reward-token addresses in instance storage and
-        /// emits the `PoolInitialized` event. Both addresses are recorded
-        /// on the first call; subsequent calls panic with
-        /// `"Already initialized"`.
+        ///
+        /// * `"Already initialized"` — if `DataKey::Admin` already exists.
+        ///
+        /// # Examples
+        ///
+        /// ```rust,ignore
+        /// client.initialize(&admin, &token);
+        /// // second call panics with "Already initialized"
+        /// ```
         pub fn initialize(env: Env, admin: Address, token: Address) {
-            // 1. Check if already initialized
             if env.storage().instance().has(&DataKey::Admin) {
                 panic!("Already initialized");
             }
-
-            // 2. Require admin authentication
             admin.require_auth();
-
-            // 3. Store admin in Instance storage
             env.storage().instance().set(&DataKey::Admin, &admin);
-
-            // 4. Store token in Instance storage
             env.storage().instance().set(&DataKey::Token, &token);
-
-            // 5. Emit PoolInitialized event
             PoolInitialized { admin, token }.publish(&env);
         }
 
-        /// Adds a contract address to the approved spender whitelist.
+        /// Adds a contract address to the approved-spender whitelist.
+        ///
+        /// Whitelisted addresses are permitted to call `distribute_reward`.
+        /// The entry is recorded under `DataKey::Spender(spender)` in persistent
+        /// storage, so it survives contract upgrades. Re-whitelisting is idempotent.
         ///
         /// # Arguments
-        /// * `admin` - The admin address (must match stored admin)
-        /// * `spender` - The contract address to whitelist
+        ///
+        /// * `admin` — Must equal the stored admin (required auth).
+        /// * `spender` — Contract address to whitelist.
         ///
         /// # Panics
-        /// * If contract is not initialized
-        /// * If admin does not match stored admin
-        /// * If admin authentication fails
-        /// Whitelist a caller contract so future `distribute_reward`
-        /// calls from that contract's address are authorised. The
-        /// spender is recorded under `DataKey::Spender(address)` in
-        /// persistent storage. Re-whitelisting is allowed (idempotent).
+        ///
+        /// * `"Not initialized"` — if `DataKey::Admin` is absent.
+        /// * `"Unauthorized"` — if `admin ≠ stored admin`.
+        ///
+        /// # Examples
+        ///
+        /// ```rust,ignore
+        /// client.add_approved_spender(&admin, &course_registry_address);
+        /// ```
         pub fn add_approved_spender(env: Env, admin: Address, spender: Address) {
-            // 1. Fetch 'Admin' address from Instance storage
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
 
-            // 2. Assert admin == stored_admin
             if admin != stored_admin {
                 panic!("Unauthorized");
             }
 
-            // 3. admin.require_auth()
             admin.require_auth();
 
-            // 4. Save `true` to Persistent storage using DataKey::Spender(spender.clone())
             env.storage()
                 .persistent()
                 .set(&DataKey::Spender(spender.clone()), &true);
 
-            // 5. Emit SpenderAdded event
             SpenderAdded { spender }.publish(&env);
         }
 
-        /// Toggles the pause state of the contract (emergency circuit breaker).
+        /// Toggles the global pause state of the contract.
+        ///
+        /// When paused (`status = true`), all `distribute_reward` calls panic
+        /// with `"Contract is paused"`. Admin-only circuit-breaker for incidents.
         ///
         /// # Arguments
-        /// * `admin` - The admin address (must match stored admin)
-        /// * `status` - The pause status (true = paused, false = unpaused)
+        ///
+        /// * `admin` — Must equal the stored admin (required auth).
+        /// * `status` — `true` to pause, `false` to unpause.
         ///
         /// # Panics
-        /// * If contract is not initialized
-        /// * If admin does not match stored admin
-        /// * If admin authentication fails
-        /// Sets the `IsPaused` flag in instance storage as a circuit
-        /// breaker. Admin-only. When `IsPaused` is true,
-        /// `distribute_reward` returns early with `"Contract is paused"`.
+        ///
+        /// * `"Not initialized"` — if `DataKey::Admin` is absent.
+        /// * `"Unauthorized"` — if `admin ≠ stored admin`.
         pub fn set_pause(env: Env, admin: Address, status: bool) {
-            // 1. Fetch 'Admin' address from Instance storage
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
 
-            // 2. Assert admin == stored_admin
             if admin != stored_admin {
                 panic!("Unauthorized");
             }
 
-            // 3. admin.require_auth()
             admin.require_auth();
 
-            // 4. Store pause status in Instance storage
             env.storage().instance().set(&DataKey::IsPaused, &status);
         }
 
-        /// Distributes rewards from the pool to a learner.
+        /// Distributes reward tokens from the pool to a learner.
+        ///
+        /// The canonical payout path used by `CourseRegistry` and `QuestEngine`.
+        /// The caller must be whitelisted via `add_approved_spender`, the amount
+        /// must be strictly positive, and the contract must be unpaused.
+        /// Tokens are transferred from this contract's own balance.
         ///
         /// # Arguments
-        /// * `caller` - The spender contract address (must be whitelisted)
-        /// * `learner` - The learner address to receive the reward
-        /// * `amount` - The amount of tokens to transfer
+        ///
+        /// * `caller` — Whitelisted spender contract (required auth).
+        /// * `learner` — Recipient of the reward tokens.
+        /// * `amount` — Number of tokens to transfer (must be `> 0`).
         ///
         /// # Panics
-        /// * If caller authentication fails
-        /// * If amount is not positive
-        /// * If caller is not an authorized spender
-        /// * If contract is not initialized
-        /// Performs the canonical USDC payout path used by CourseRegistry.
-        /// Spender must be whitelisted via `add_approved_spender`. The
-        /// amount must be strictly positive. The contract must be unpaused.
-        /// Funds are transferred from this contract's balance.
+        ///
+        /// * `"Contract is paused"` — if `IsPaused` is `true`.
+        /// * `"Amount must be positive"` — if `amount <= 0`.
+        /// * `"Not initialized"` — if the contract hasn't been initialized.
+        /// * `"Caller is not an authorized spender"` — if `caller` is not whitelisted.
+        ///
+        /// # Examples
+        ///
+        /// ```rust,ignore
+        /// // registry must be whitelisted first
+        /// client.add_approved_spender(&admin, &registry_addr);
+        /// client.distribute_reward(&registry_addr, &learner, &100_0000000i128);
+        /// ```
         pub fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128) {
-            // 0. Check if contract is paused
             let is_paused: bool = env
                 .storage()
                 .instance()
@@ -220,23 +281,18 @@ mod contract_impl {
                 .unwrap_or(false);
             assert!(!is_paused, "Contract is paused");
 
-            // 1. caller.require_auth()
             caller.require_auth();
 
-            // 2. Assert amount > 0
             if amount <= 0 {
                 panic!("Amount must be positive");
             }
 
-            // 3. Check if contract is initialized first
             let token_id: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Token)
                 .expect("Not initialized");
 
-            // 4. Construct DataKey::Spender(caller.clone())
-            // 5. Fetch the boolean from Persistent storage. Assert it is true
             let is_authorized: bool = env
                 .storage()
                 .persistent()
@@ -247,13 +303,9 @@ mod contract_impl {
                 panic!("Caller is not an authorized spender");
             }
 
-            // 6. Initialize token::Client::new(&env, &token_id)
             let token_client = token::Client::new(&env, &token_id);
-
-            // 7. Call token_client.transfer(&env.current_contract_address(), &learner, &amount)
             token_client.transfer(&env.current_contract_address(), &learner, &amount);
 
-            // 8. Emit RewardDistributed event
             RewardDistributed {
                 caller,
                 learner,
@@ -262,88 +314,78 @@ mod contract_impl {
             .publish(&env);
         }
 
-        /// Funds the reward pool with tokens from a donor.
+        /// Tops up the reward pool by transferring tokens from a donor.
+        ///
+        /// The donor must authorize the token transfer. On success the contract's
+        /// token balance increases and [`PoolFunded`] is emitted.
         ///
         /// # Arguments
-        /// * `donor` - The address donating the tokens
-        /// * `amount` - The amount of tokens to donate
+        ///
+        /// * `donor` — Address supplying the tokens (required auth).
+        /// * `amount` — Number of tokens to deposit.
         ///
         /// # Panics
-        /// * If contract is not initialized
-        /// * If donor authentication fails
-        /// * If token transfer fails
-        /// Donor-funded top-up of the reward pool's token balance. The donor
-        /// must authorize the token transfer; on success a `PoolFunded`
-        /// event is published and the contract's balance increases.
+        ///
+        /// * `"Not initialized"` — if the contract hasn't been initialized.
+        ///
+        /// # Examples
+        ///
+        /// ```rust,ignore
+        /// client.fund_pool(&donor, &500_0000000i128);
+        /// ```
         pub fn fund_pool(env: Env, donor: Address, amount: i128) {
-            // 1. donor.require_auth()
             donor.require_auth();
 
-            // 2. Fetch 'Token_Address' from Instance storage
             let token_id: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Token)
                 .expect("Not initialized");
 
-            // 3. Initialize token::Client::new(&env, &Token_Address)
             let token_client = token::Client::new(&env, &token_id);
-
-            // 4. Call token_client.transfer(&donor, &env.current_contract_address(), &amount)
             token_client.transfer(&donor, env.current_contract_address(), &amount);
 
-            // 5. Emit PoolFunded event
             PoolFunded { donor, amount }.publish(&env);
         }
 
-        /// Emergency sweep function allowing admin to transfer all tokens from the contract
-        /// to a recovery wallet in case of a critical vulnerability.
+        /// Transfers the entire token balance to a recovery wallet. Admin-only.
+        ///
+        /// Intended for incidents requiring a full token rescue. Emits
+        /// [`EmergencySweep`] with the swept amount.
         ///
         /// # Arguments
-        /// * `admin` - The admin address (must match stored admin)
-        /// * `recovery_wallet` - The address to receive the swept tokens
+        ///
+        /// * `admin` — Must equal the stored admin (required auth).
+        /// * `recovery_wallet` — Destination address for the swept tokens.
         ///
         /// # Panics
-        /// * If contract is not initialized
-        /// * If admin does not match stored admin
-        /// * If admin authentication fails
-        /// Transfers the entire token balance of the contract to a
-        /// designated recovery wallet. Admin-only. Emits
-        /// `EmergencySweep` with the swept amount. Intended for
-        /// incidents requiring a full token rescue.
+        ///
+        /// * `"Not initialized"` — if the contract hasn't been initialized.
+        /// * `"Unauthorized"` — if `admin ≠ stored admin`.
         pub fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address) {
-            // 1. admin.require_auth()
             admin.require_auth();
 
-            // 2. Fetch stored admin from Instance storage
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
 
-            // 3. Assert admin == stored_admin
             if admin != stored_admin {
                 panic!("Unauthorized");
             }
 
-            // 4. Fetch token address from Instance storage
             let token_id: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Token)
                 .expect("Not initialized");
 
-            // 5. Initialize token client
             let token_client = token::Client::new(&env, &token_id);
 
-            // 6. Fetch full contract token balance
             let balance = token_client.balance(&env.current_contract_address());
-
-            // 7. Transfer full balance to recovery wallet
             token_client.transfer(&env.current_contract_address(), &recovery_wallet, &balance);
 
-            // 8. Emit EmergencySweep event
             EmergencySweep {
                 admin,
                 recovery_wallet,
@@ -352,10 +394,20 @@ mod contract_impl {
             .publish(&env);
         }
 
-        /// Upgrades the contract WASM. Only callable by the Protocol Admin.
-        /// Replaces the RewardPool WASM with the supplied hash on the
-        /// Soroban host. Admin-only. Emits `ContractUpgraded` on
-        /// successful deployment of the new WASM.
+        /// Upgrades the contract WASM to a new hash. Only callable by the protocol admin.
+        ///
+        /// Replaces the RewardPool WASM on the Soroban host and emits
+        /// [`ContractUpgraded`] on success.
+        ///
+        /// # Arguments
+        ///
+        /// * `admin` — Must equal the stored admin (required auth).
+        /// * `new_wasm_hash` — SHA-256 hash of the replacement WASM blob.
+        ///
+        /// # Panics
+        ///
+        /// * `"Not initialized"` — if the contract hasn't been initialized.
+        /// * `"Unauthorized"` — if `admin ≠ stored admin`.
         pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
             admin.require_auth();
 
@@ -382,3 +434,6 @@ mod contract_impl {
 pub use contract_impl::RewardPool;
 
 mod test;
+
+#[cfg(test)]
+mod invariants;

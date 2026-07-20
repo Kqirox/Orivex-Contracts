@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - develop
+    tags:
+      - "v*"
   pull_request:
     types:
       - opened
@@ -15,7 +17,7 @@ jobs:
   ci:
     name: Rust CI
     runs-on: ubuntu-latest
-    
+
     defaults:
       run:
         working-directory: ./contracts
@@ -50,3 +52,55 @@ jobs:
 
       - name: Build all Wasm artifacts
         run: stellar contract build
+
+      # Verify that rustdoc produces zero warnings for all crates,
+      # including private items.  This enforces the /// migration.
+      - name: Check documentation (zero warnings)
+        run: cargo doc --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+  docs:
+    name: Publish docs to GitHub Pages
+    runs-on: ubuntu-latest
+    # Only run on version tags (e.g. v1.2.3)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: ci
+
+    permissions:
+      contents: write   # needed to push to gh-pages branch
+
+    defaults:
+      run:
+        working-directory: ./contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: "./contracts"
+
+      - name: Build documentation
+        run: cargo doc --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+      # Add a redirect from the root so GitHub Pages opens the right crate.
+      - name: Add root redirect
+        run: |
+          echo '<meta http-equiv="refresh" content="0; url=course_registry/index.html">' \
+            > ../target/doc/index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/doc
+          destination_dir: docs
