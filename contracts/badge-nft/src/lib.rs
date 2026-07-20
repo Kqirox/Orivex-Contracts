@@ -397,3 +397,6 @@ mod contract_impl {
 pub use contract_impl::BadgeNFT;
 
 mod test;
+
+#[cfg(test)]
+mod invariants;

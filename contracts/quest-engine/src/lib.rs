@@ -801,3 +801,6 @@ impl QuestEngineContract {
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod invariants;

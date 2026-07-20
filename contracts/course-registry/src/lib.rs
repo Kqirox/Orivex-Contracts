@@ -774,3 +774,6 @@ impl CourseRegistry {
 }
 
 mod test;
+
+#[cfg(test)]
+mod invariants;

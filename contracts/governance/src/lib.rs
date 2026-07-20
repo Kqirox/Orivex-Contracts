@@ -338,3 +338,6 @@ impl Governance {
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod invariants;

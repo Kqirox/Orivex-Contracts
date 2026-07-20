@@ -330,3 +330,6 @@ impl StakeVault {
 }
 
 mod test;
+
+#[cfg(test)]
+mod invariants;
