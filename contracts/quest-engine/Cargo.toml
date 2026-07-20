@@ -8,5 +8,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
+stake-vault = { path = "../stake-vault" }
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

@@ -6,6 +6,7 @@ use soroban_sdk::{
 
 use crate::types::{QuestType, SubmissionStatus};
 use crate::{QuestEngineContract, QuestEngineContractClient};
+use stake_vault::types::MultiplierBps;
 
 // ── Mock StakeVault Contract ─────────────────────────────────────────────────
 
@@ -14,10 +15,9 @@ pub struct MockStakeVault;
 
 #[contractimpl]
 impl MockStakeVault {
-    /// Returns a multiplier for a learner (basis points: 100 = 1.0x, 120 = 1.2x)
-    /// For testing, we'll return 100 (no boost) by default
-    pub fn get_multiplier(_env: Env, _learner: Address) -> u32 {
-        100 // Default: no multiplier
+    /// Returns `MultiplierBps::None` (100 bps / 1.0×) — no stake bonus.
+    pub fn get_multiplier(_env: Env, _learner: Address) -> MultiplierBps {
+        MultiplierBps::None
     }
 }
 
@@ -529,8 +529,9 @@ pub struct MockStakeVaultWithMultiplier;
 
 #[contractimpl]
 impl MockStakeVaultWithMultiplier {
-    pub fn get_multiplier(_env: Env, _learner: Address) -> u32 {
-        120 // 1.2x multiplier
+    /// Returns `MultiplierBps::Low` (120 bps / 1.2×).
+    pub fn get_multiplier(_env: Env, _learner: Address) -> MultiplierBps {
+        MultiplierBps::Low
     }
 }
 

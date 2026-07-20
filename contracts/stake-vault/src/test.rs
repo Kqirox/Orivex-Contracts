@@ -6,7 +6,7 @@ use soroban_sdk::{
 };
 
 use crate::{
-    types::{DataKey, StakeInfo},
+    types::{DataKey, MultiplierBps, StakeInfo},
     StakeVault, StakeVaultClient,
 };
 
@@ -148,7 +148,7 @@ fn test_get_multiplier() {
     let (env, client) = setup();
     let user = Address::generate(&env);
 
-    assert_eq!(client.get_multiplier(&user), 100);
+    assert_eq!(client.get_multiplier(&user), MultiplierBps::None);
 
     env.as_contract(&client.address, || {
         env.storage().persistent().set(
@@ -159,7 +159,7 @@ fn test_get_multiplier() {
             },
         );
     });
-    assert_eq!(client.get_multiplier(&user), 100);
+    assert_eq!(client.get_multiplier(&user), MultiplierBps::None);
 
     env.as_contract(&client.address, || {
         env.storage().persistent().set(
@@ -170,7 +170,7 @@ fn test_get_multiplier() {
             },
         );
     });
-    assert_eq!(client.get_multiplier(&user), 120);
+    assert_eq!(client.get_multiplier(&user), MultiplierBps::Low);
 
     env.as_contract(&client.address, || {
         env.storage().persistent().set(
@@ -181,7 +181,7 @@ fn test_get_multiplier() {
             },
         );
     });
-    assert_eq!(client.get_multiplier(&user), 120);
+    assert_eq!(client.get_multiplier(&user), MultiplierBps::Low);
 
     env.as_contract(&client.address, || {
         env.storage().persistent().set(
@@ -192,7 +192,7 @@ fn test_get_multiplier() {
             },
         );
     });
-    assert_eq!(client.get_multiplier(&user), 200);
+    assert_eq!(client.get_multiplier(&user), MultiplierBps::High);
 
     env.as_contract(&client.address, || {
         env.storage().persistent().set(
@@ -203,5 +203,19 @@ fn test_get_multiplier() {
             },
         );
     });
-    assert_eq!(client.get_multiplier(&user), 200);
+    assert_eq!(client.get_multiplier(&user), MultiplierBps::High);
+}
+
+#[test]
+fn test_multiplier_bps_round_trip() {
+    // Each variant must preserve its documented basis-points value through as_bps().
+    assert_eq!(MultiplierBps::None.as_bps(), 100, "None tier must be 100 bps (1.0×)");
+    assert_eq!(MultiplierBps::Low.as_bps(), 120, "Low tier must be 120 bps (1.2×)");
+    assert_eq!(MultiplierBps::High.as_bps(), 200, "High tier must be 200 bps (2.0×)");
+
+    // Scaled-payout arithmetic using as_bps() must match known-good values.
+    let base: i128 = 850;
+    assert_eq!((base * MultiplierBps::None.as_bps() as i128) / 100, 850);
+    assert_eq!((base * MultiplierBps::Low.as_bps() as i128) / 100, 1020);
+    assert_eq!((base * MultiplierBps::High.as_bps() as i128) / 100, 1700);
 }
