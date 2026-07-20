@@ -186,7 +186,73 @@ impl QuestEngineContract {
         // 3. call token_client.transfer(employer, env.current_contract_address(), reward_amount).
         token_client.transfer(&employer, env.current_contract_address(), &reward_amount);
 
-        // 4. Increment Quest ID counter.
+        Self::create_quest_internal(&env, employer, reward_amount, metadata_hash)
+    }
+
+    /// Creates a Build Quest using the SAC token allowance pattern.
+    ///
+    /// Instead of requiring the employer to send funds atomically with
+    /// quest creation, this variant uses `transfer_from` to pull funds
+    /// from a pre-authorized allowance. The employer must first call
+    /// `token.approve(employer, quest_engine_address, amount, expiration_ledger)`
+    /// on the SAC token contract to authorize the QuestEngine to spend
+    /// on their behalf.
+    ///
+    /// # Advantages over `create_build_quest`
+    /// - Employer can set a single large allowance and create multiple
+    ///   quests without re-approving per quest.
+    /// - Decouples funding authorization from quest creation timing.
+    /// - Reduces transaction failures from balance/amount mismatches.
+    ///
+    /// # Arguments
+    /// * `employer` - The employer address (must have pre-approved allowance)
+    /// * `reward_amount` - The amount to pull from the employer's allowance
+    /// * `metadata_hash` - Hash of the quest metadata
+    ///
+    /// # Returns
+    /// The ID of the newly created quest
+    ///
+    /// # Panics
+    /// * If contract is not initialized
+    /// * If employer authentication fails
+    /// * If allowance is insufficient or expired
+    pub fn create_build_quest_with_allowance(
+        env: Env,
+        employer: Address,
+        reward_amount: i128,
+        metadata_hash: BytesN<32>,
+    ) -> u32 {
+        // 1. employer.require_auth()
+        employer.require_auth();
+
+        // 2. Fetch token_client for the token asset.
+        let token_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+        let token_client = token::Client::new(&env, &token_address);
+
+        // 3. Use transfer_from to pull funds from employer's pre-authorized allowance.
+        //    The QuestEngine contract is the spender, pulling from the employer.
+        token_client.transfer_from(
+            &env.current_contract_address(),
+            &employer,
+            &env.current_contract_address(),
+            &reward_amount,
+        );
+
+        Self::create_quest_internal(&env, employer, reward_amount, metadata_hash)
+    }
+
+    /// Internal helper: persists a Build quest and emits the QuestCreated event.
+    fn create_quest_internal(
+        env: &Env,
+        employer: Address,
+        reward_amount: i128,
+        metadata_hash: BytesN<32>,
+    ) -> u32 {
+        // Increment Quest ID counter.
         let mut quest_id: u32 = env
             .storage()
             .instance()
@@ -197,7 +263,7 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::QuestCounter, &quest_id);
 
-        // 5. Create Quest struct with QuestType::Build.
+        // Create Quest struct with QuestType::Build.
         let quest = Quest {
             employer: employer.clone(),
             reward_amount,
@@ -206,18 +272,18 @@ impl QuestEngineContract {
             active: true,
         };
 
-        // 6. Save to Persistent storage.
+        // Save to Persistent storage.
         env.storage()
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
 
-        // 7. Emit QuestCreated event.
+        // Emit QuestCreated event.
         QuestCreated {
             employer,
             quest_id,
             reward_amount,
         }
-        .publish(&env);
+        .publish(env);
 
         quest_id
     }
