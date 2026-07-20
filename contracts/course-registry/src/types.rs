@@ -7,6 +7,7 @@ pub struct Course {
     pub total_modules: u32,
     pub metadata_hash: BytesN<32>,
     pub active: bool,
+    pub reward_amount: i128,
 }
 
 #[contracttype]
@@ -18,4 +19,5 @@ pub enum DataKey {
     Admin,
     BadgeNftAddress,
     RewardPoolAddress,
+    ContractVersion,
 }
