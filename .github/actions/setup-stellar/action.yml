@@ -1,0 +1,41 @@
+name: "Setup Stellar + Rust toolchain"
+description: >
+  Installs the Rust toolchain (stable + rustfmt + clippy + wasm targets),
+  primes the Cargo cache, and installs the Stellar CLI.
+  Extracted as a reusable composite action so every CI job uses identical
+  versions without copy-pasting.
+
+inputs:
+  stellar-cli-version:
+    description: "stellar-cli action tag to install (e.g. v23.0.1)"
+    required: false
+    default: "v23.0.1"
+  cache-workspaces:
+    description: >
+      Passed verbatim to Swatinem/rust-cache `workspaces` input.
+      Default targets the contracts workspace root.
+    required: false
+    default: "./contracts"
+  rust-toolchain:
+    description: "Rust toolchain channel to install"
+    required: false
+    default: "stable"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Rust toolchain (${{ inputs.rust-toolchain }})
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.rust-toolchain }}
+        components: rustfmt, clippy
+        targets: wasm32-unknown-unknown, wasm32v1-none
+
+    - name: Cache Cargo build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true
+        workspaces: ${{ inputs.cache-workspaces }}
+
+    - name: Install Stellar CLI (${{ inputs.stellar-cli-version }})
+      uses: stellar/stellar-cli@v23.0.1
