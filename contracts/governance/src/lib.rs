@@ -60,6 +60,12 @@ pub struct ContractUpgraded {
     pub new_wasm_hash: BytesN<32>,
 }
 
+#[contractevent]
+pub struct ContractInitialized {
+    #[topic]
+    pub admin: Address,
+}
+
 #[contractimpl]
 impl Governance {
     /// Initializes the governance contract with the admin and BadgeNFT contract address.
@@ -76,6 +82,8 @@ impl Governance {
         env.storage()
             .instance()
             .set(&BADGE_NFT_KEY, &badge_contract_address);
+
+        ContractInitialized { admin }.publish(&env);
     }
 
     /// Returns the proposal stored for the given proposal ID.

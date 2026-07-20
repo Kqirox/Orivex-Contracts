@@ -85,6 +85,12 @@ pub struct ContractUpgraded {
     pub new_wasm_hash: BytesN<32>,
 }
 
+#[contractevent]
+pub struct ContractInitialized {
+    #[topic]
+    pub admin: Address,
+}
+
 #[contractimpl]
 impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
@@ -98,6 +104,8 @@ impl CourseRegistry {
             panic!("Already initialized");
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
+
+        ContractInitialized { admin }.publish(&env);
     }
 
     /// Registers the RewardPool contract address so the registry can trigger payouts on completion.

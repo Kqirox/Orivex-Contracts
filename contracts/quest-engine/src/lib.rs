@@ -98,6 +98,19 @@ pub struct ExploreQuestVerified {
     pub amount: i128,
 }
 
+#[contractevent]
+pub struct ContractInitialized {
+    #[topic]
+    pub admin: Address,
+}
+
+#[contractevent]
+pub struct PauseToggled {
+    #[topic]
+    pub admin: Address,
+    pub status: bool,
+}
+
 #[contract]
 pub struct QuestEngineContract;
 
@@ -124,6 +137,8 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::StakeVault, &stake_vault);
         env.storage().instance().set(&DataKey::QuestCounter, &0u32);
+
+        ContractInitialized { admin }.publish(&env);
     }
 
     /// Toggles the pause state of the contract (emergency circuit breaker).
@@ -158,6 +173,9 @@ impl QuestEngineContract {
 
         // 4. Store pause status in Instance storage
         env.storage().instance().set(&DataKey::IsPaused, &status);
+
+        // 5. Emit PauseToggled event
+        PauseToggled { admin, status }.publish(&env);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.

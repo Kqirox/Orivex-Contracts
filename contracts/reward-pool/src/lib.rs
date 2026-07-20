@@ -31,11 +31,18 @@ pub trait RewardPoolInterface {
 }
 
 #[contractevent]
-pub struct PoolInitialized {
+pub struct ContractInitialized {
     #[topic]
     pub admin: Address,
     #[topic]
     pub token: Address,
+}
+
+#[contractevent]
+pub struct PauseToggled {
+    #[topic]
+    pub admin: Address,
+    pub status: bool,
 }
 
 #[contractevent]
@@ -82,8 +89,8 @@ mod contract_impl {
 
     use crate::types::DataKey;
     use crate::{
-        ContractUpgraded, EmergencySweep, PoolFunded, PoolInitialized, RewardDistributed,
-        SpenderAdded,
+        ContractInitialized, ContractUpgraded, EmergencySweep, PauseToggled, PoolFunded,
+        RewardDistributed, SpenderAdded,
     };
 
     #[contract]
@@ -101,7 +108,7 @@ mod contract_impl {
         /// * If contract is already initialized
         /// * If admin authentication fails
         /// Stores admin and reward-token addresses in instance storage and
-        /// emits the `PoolInitialized` event. Both addresses are recorded
+        /// emits the `ContractInitialized` event. Both addresses are recorded
         /// on the first call; subsequent calls panic with
         /// `"Already initialized"`.
         pub fn initialize(env: Env, admin: Address, token: Address) {
@@ -119,8 +126,8 @@ mod contract_impl {
             // 4. Store token in Instance storage
             env.storage().instance().set(&DataKey::Token, &token);
 
-            // 5. Emit PoolInitialized event
-            PoolInitialized { admin, token }.publish(&env);
+            // 5. Emit ContractInitialized event
+            ContractInitialized { admin, token }.publish(&env);
         }
 
         /// Adds a contract address to the approved spender whitelist.
@@ -193,6 +200,9 @@ mod contract_impl {
 
             // 4. Store pause status in Instance storage
             env.storage().instance().set(&DataKey::IsPaused, &status);
+
+            // 5. Emit PauseToggled event
+            PauseToggled { admin, status }.publish(&env);
         }
 
         /// Distributes rewards from the pool to a learner.
