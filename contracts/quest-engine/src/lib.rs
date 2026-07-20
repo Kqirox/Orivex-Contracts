@@ -19,13 +19,15 @@ pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
+use stake_vault::types::MultiplierBps;
+
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
 };
 
 #[contractclient(name = "StakeVaultClient")]
 pub trait StakeVaultInterface {
-    fn get_multiplier(env: Env, learner: Address) -> u32;
+    fn get_multiplier(env: Env, learner: Address) -> MultiplierBps;
 }
 
 #[contractclient(name = "RewardPoolClient")]
@@ -429,7 +431,7 @@ impl QuestEngineContract {
             // since the quest only has base_learner_amount available after fees.
             // In production, employers should fund quests accounting for potential multipliers,
             // or the boost should come from a separate reward pool contract with proper authorization.
-            let calculated_boost = (base_learner_amount * multiplier as i128) / 100;
+            let calculated_boost = (base_learner_amount * multiplier.as_bps() as i128) / 100;
             let learner_amount = if calculated_boost > base_learner_amount {
                 base_learner_amount // Cap to available funds
             } else {

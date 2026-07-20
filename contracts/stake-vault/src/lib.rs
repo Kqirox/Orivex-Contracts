@@ -1,9 +1,24 @@
 #![no_std]
 
+/// Basis-points value for the high-tier multiplier.
+///
+/// Prefer [`types::MultiplierBps::High`] and [`types::MultiplierBps::as_bps`]
+/// over this bare constant.
+#[deprecated(since = "0.2.0", note = "Use `MultiplierBps::High.as_bps()` instead")]
 pub const STAKE_TIER_HIGH_BPS: u32 = 200;
 
+/// Basis-points value for the low-tier multiplier.
+///
+/// Prefer [`types::MultiplierBps::Low`] and [`types::MultiplierBps::as_bps`]
+/// over this bare constant.
+#[deprecated(since = "0.2.0", note = "Use `MultiplierBps::Low.as_bps()` instead")]
 pub const STAKE_TIER_LOW_BPS: u32 = 120;
 
+/// Basis-points value for no multiplier (default tier).
+///
+/// Prefer [`types::MultiplierBps::None`] and [`types::MultiplierBps::as_bps`]
+/// over this bare constant.
+#[deprecated(since = "0.2.0", note = "Use `MultiplierBps::None.as_bps()` instead")]
 pub const STAKE_TIER_NONE_BPS: u32 = 100;
 // Operational notes — multiplier calculation is a 3-tier
 // lookup bound by `TIER_LOW_STAKE_BOUND` and
@@ -22,7 +37,7 @@ pub const DEFAULT_LOCK_PERIOD_SECONDS: u64 = 604800;
 use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
 pub mod types;
-use types::{DataKey, StakeInfo};
+use types::{DataKey, MultiplierBps, StakeInfo};
 
 #[contract]
 pub struct StakeVault;
@@ -164,11 +179,31 @@ impl StakeVault {
         .publish(&env);
     }
 
-    /// Returns a basis-points multiplier based on the user's staked
-    /// amount. The scheme uses three tiers: 100 (default, 1.0x),
-    /// 120 (≥100 stake, 1.2x), and 200 (≥500 stake, 2.0x). Quest
-    /// review paths consult this value to scale payouts.
-    pub fn get_multiplier(env: Env, user: Address) -> u32 {
+    /// Returns the basis-points multiplier tier for the given user based on
+    /// their current staked balance.
+    ///
+    /// ## Tier table
+    ///
+    /// | Staked amount | Variant              | BPS | Effective multiplier |
+    /// |---------------|----------------------|-----|----------------------|
+    /// | < 100         | [`MultiplierBps::None`]  | 100 | 1.0×             |
+    /// | 100 – 499     | [`MultiplierBps::Low`]   | 120 | 1.2×             |
+    /// | ≥ 500         | [`MultiplierBps::High`]  | 200 | 2.0×             |
+    ///
+    /// ## Basis-points convention
+    ///
+    /// All variants are expressed in *basis points* (hundredths of 1×).
+    /// Cross-contract callers **must** call [`MultiplierBps::as_bps`] and then
+    /// divide by 100 to obtain the scaled payout:
+    ///
+    /// ```ignore
+    /// let multiplier = stake_vault.get_multiplier(&learner);
+    /// let boosted = (base_amount * multiplier.as_bps() as i128) / 100;
+    /// ```
+    ///
+    /// Using the raw discriminant integer instead of `as_bps()` will produce
+    /// incorrect results (0, 1, or 2 rather than 100, 120, or 200).
+    pub fn get_multiplier(env: Env, user: Address) -> MultiplierBps {
         let stake_info: StakeInfo = env
             .storage()
             .persistent()
@@ -178,12 +213,12 @@ impl StakeVault {
                 lock_timestamp: 0,
             });
 
-        if stake_info.amount >= 500 {
-            200
-        } else if stake_info.amount >= 100 {
-            120
+        if stake_info.amount >= TIER_HIGH_STAKE_BOUND {
+            MultiplierBps::High
+        } else if stake_info.amount >= TIER_LOW_STAKE_BOUND {
+            MultiplierBps::Low
         } else {
-            100
+            MultiplierBps::None
         }
     }
 
