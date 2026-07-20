@@ -28,6 +28,8 @@ pub trait RewardPoolInterface {
     fn fund_pool(env: Env, donor: Address, amount: i128);
     fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address);
     fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>);
+    fn token_decimals(env: Env) -> u32;
+    fn pool_balance(env: Env) -> i128;
 }
 
 #[contractevent]
@@ -260,10 +262,14 @@ mod contract_impl {
             // 6. Initialize token::Client::new(&env, &token_id)
             let token_client = token::Client::new(&env, &token_id);
 
-            // 7. Call token_client.transfer(&env.current_contract_address(), &learner, &amount)
+            // 7. Assert sufficient pool balance before transfer
+            let balance = token_client.balance(&env.current_contract_address());
+            assert!(amount <= balance, "Insufficient pool balance");
+
+            // 8. Call token_client.transfer(&env.current_contract_address(), &learner, &amount)
             token_client.transfer(&env.current_contract_address(), &learner, &amount);
 
-            // 8. Emit RewardDistributed event
+            // 9. Emit RewardDistributed event
             RewardDistributed {
                 caller,
                 learner,
@@ -360,6 +366,25 @@ mod contract_impl {
                 amount: balance,
             }
             .publish(&env);
+        }
+
+        /// Returns the token decimals for the reward token.
+        /// Pure getter — no storage access, no event.
+        pub fn token_decimals(_env: Env) -> u32 {
+            crate::REWARD_TOKEN_DECIMALS
+        }
+
+        /// Returns the current pool token balance held by this contract.
+        /// Pure view — reads the on-chain token balance and returns it.
+        /// No event is emitted.
+        pub fn pool_balance(env: Env) -> i128 {
+            let token_id: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Token)
+                .expect("Not initialized");
+            let token_client = token::Client::new(&env, &token_id);
+            token_client.balance(&env.current_contract_address())
         }
 
         /// Upgrades the contract WASM. Only callable by the Protocol Admin.
