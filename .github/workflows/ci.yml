@@ -50,3 +50,35 @@ jobs:
 
       - name: Build all Wasm artifacts
         run: stellar contract build
+
+      - name: Check WASM size budgets
+        id: wasm-check
+        continue-on-error: true
+        run: |
+          chmod +x check-wasm-sizes.sh
+          set +e
+          ./check-wasm-sizes.sh | tee wasm-size-report.md
+          WASM_EXIT=${PIPESTATUS[0]}
+          set -e
+          # Store report as step output for PR comment (always, even on failure)
+          {
+            echo 'report<<WASM_EOF'
+            cat wasm-size-report.md
+            echo 'WASM_EOF'
+          } >> "$GITHUB_OUTPUT"
+          exit $WASM_EXIT
+
+      - name: Fail if WASM budgets exceeded
+        if: steps.wasm-check.outcome == 'failure'
+        run: |
+          echo "One or more contracts exceed the WASM size budget!"
+          exit 1
+
+      - name: Post WASM size report to PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          header: wasm-size-report
+          message: ${{ steps.wasm-check.outputs.report }}
