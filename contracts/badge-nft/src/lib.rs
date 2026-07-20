@@ -311,13 +311,12 @@ mod contract_impl {
                 .expect("Not initialized");
             assert!(admin == stored_admin, "Unauthorized");
 
-            let current_version: u32 = env
-                .storage()
-                .instance()
-                .get(&DataKey::Version)
-                .unwrap_or(0);
+            let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
 
-            assert!(current_version < crate::VERSION, "Already at current version");
+            assert!(
+                current_version < crate::VERSION,
+                "Already at current version"
+            );
 
             // ── v0 → v1 ──────────────────────────────────────────────────────
             // Badge struct is wire-compatible between v0 and v1.
@@ -336,10 +335,7 @@ mod contract_impl {
         /// Returns the schema version currently stored in instance storage.
         /// Returns 0 when the contract was deployed before versioning was introduced.
         pub fn contract_version(env: Env) -> u32 {
-            env.storage()
-                .instance()
-                .get(&DataKey::Version)
-                .unwrap_or(0)
+            env.storage().instance().get(&DataKey::Version).unwrap_or(0)
         }
     }
 }

@@ -653,11 +653,7 @@ impl QuestEngineContract {
             .expect("Not initialized");
         assert!(admin == stored_admin, "Unauthorized");
 
-        let current_version: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::Version)
-            .unwrap_or(0);
+        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
 
         assert!(current_version < VERSION, "Already at current version");
 
@@ -670,18 +666,13 @@ impl QuestEngineContract {
         }
 
         // ── write new version ─────────────────────────────────────────────────
-        env.storage()
-            .instance()
-            .set(&DataKey::Version, &VERSION);
+        env.storage().instance().set(&DataKey::Version, &VERSION);
     }
 
     /// Returns the schema version currently stored in instance storage.
     /// Returns 0 when the contract was deployed before versioning was introduced.
     pub fn contract_version(env: Env) -> u32 {
-        env.storage()
-            .instance()
-            .get(&DataKey::Version)
-            .unwrap_or(0)
+        env.storage().instance().get(&DataKey::Version).unwrap_or(0)
     }
 
     /// Verifies an Explore Quest completion and triggers payout from RewardPool.
