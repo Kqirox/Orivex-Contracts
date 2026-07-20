@@ -951,3 +951,105 @@ fn test_reward_distributed_only_on_final_module() {
     client.complete_module(&admin, &learner, &course_id);
     assert_eq!(token_sac.balance(&learner), 10_0000000);
 }
+
+// ── Storage versioning & migrations ──────────────────────────────────────────
+
+/// A freshly deployed contract reports version 0 (no Version key set yet).
+#[test]
+fn test_contract_version_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    assert_eq!(client.contract_version(), 0);
+}
+
+/// After `migrate()` the stored version equals the compiled VERSION constant.
+#[test]
+fn test_migrate_v0_to_v1_sets_version() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+}
+
+/// `migrate()` called twice panics with "Already at current version".
+#[test]
+#[should_panic(expected = "Already at current version")]
+fn test_migrate_twice_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.migrate(&admin);
+    client.migrate(&admin);
+}
+
+/// Non-admin cannot call `migrate()`.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_migrate_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.migrate(&attacker);
+}
+
+/// Migration does not disturb existing Course records (v0 → v1).
+#[test]
+fn test_migrate_v0_to_v1_preserves_course_data() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let hash = dummy_hash(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &hash);
+    assert_eq!(client.contract_version(), 0);
+
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+
+    let course = client.get_course(&course_id);
+    assert_eq!(course.instructor, instructor);
+    assert_eq!(course.total_modules, 3);
+    assert_eq!(course.metadata_hash, hash);
+    assert!(course.active);
+}
+
+/// Migration preserves learner progress records (v0 → v1).
+#[test]
+fn test_migrate_v0_to_v1_preserves_progress_data() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+    client.enroll(&learner, &course_id);
+    client.complete_module(&admin, &learner, &course_id);
+
+    let progress_before = client.get_progress(&learner, &course_id);
+    client.migrate(&admin);
+    let progress_after = client.get_progress(&learner, &course_id);
+
+    assert_eq!(progress_before, progress_after);
+    assert_eq!(progress_after, 1);
+}
+
+/// `contract_version()` returns the correct value after migration.
+#[test]
+fn test_contract_version_after_migration() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), 1u32);
+}

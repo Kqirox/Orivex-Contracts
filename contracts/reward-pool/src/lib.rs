@@ -1,5 +1,14 @@
 #![no_std]
 
+/// Current storage schema version for this contract.
+/// Increment this constant when making breaking changes to stored structs or
+/// DataKey variants, and add the corresponding migration step in `migrate()`.
+///
+/// Version history:
+///   0 – pre-versioning baseline (no Version key in storage)
+///   1 – initial versioned schema; no struct changes from v0
+pub const VERSION: u32 = 1;
+
 pub const REWARD_TOKEN_DECIMALS: u32 = 7;
 
 pub const MAX_SPENDERS: u32 = 256;
@@ -28,6 +37,9 @@ pub trait RewardPoolInterface {
     fn fund_pool(env: Env, donor: Address, amount: i128);
     fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address);
     fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>);
+    fn estimated_storage_footprint(env: Env) -> u32;
+    fn migrate(env: Env, admin: Address);
+    fn contract_version(env: Env) -> u32;
 }
 
 #[contractevent]
@@ -154,9 +166,21 @@ mod contract_impl {
             admin.require_auth();
 
             // 4. Save `true` to Persistent storage using DataKey::Spender(spender.clone())
-            env.storage()
-                .persistent()
-                .set(&DataKey::Spender(spender.clone()), &true);
+            let spender_key = DataKey::Spender(spender.clone());
+            let is_new: bool = !env.storage().persistent().has(&spender_key);
+            env.storage().persistent().set(&spender_key, &true);
+
+            // Increment the footprint counter only for genuinely new spenders.
+            if is_new {
+                let prev: u32 = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::SpenderCount)
+                    .unwrap_or(0);
+                env.storage()
+                    .instance()
+                    .set(&DataKey::SpenderCount, &(prev + 1));
+            }
 
             // 5. Emit SpenderAdded event
             SpenderAdded { spender }.publish(&env);
@@ -352,10 +376,25 @@ mod contract_impl {
             .publish(&env);
         }
 
+        /// Returns the estimated number of persistent storage entries for this
+        /// contract. Each whitelisted spender contributes one
+        /// `DataKey::Spender(Address)` entry. The count is maintained by
+        /// `add_approved_spender`.
+        pub fn estimated_storage_footprint(env: Env) -> u32 {
+            env.storage()
+                .instance()
+                .get(&DataKey::SpenderCount)
+                .unwrap_or(0)
+        }
+
         /// Upgrades the contract WASM. Only callable by the Protocol Admin.
         /// Replaces the RewardPool WASM with the supplied hash on the
         /// Soroban host. Admin-only. Emits `ContractUpgraded` on
         /// successful deployment of the new WASM.
+        ///
+        /// After swapping the WASM, the caller **must** invoke `migrate()` in a
+        /// subsequent transaction so that any storage-schema changes are applied
+        /// before regular contract functions are used.
         pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
             admin.require_auth();
 
@@ -374,6 +413,57 @@ mod contract_impl {
                 new_wasm_hash,
             }
             .publish(&env);
+        }
+
+        /// Applies any pending storage-schema migrations for the current WASM version.
+        ///
+        /// Must be called by the admin in the first transaction after `upgrade_contract`.
+        ///
+        /// # Version transition table
+        /// | from | to | changes |
+        /// |------|-----|---------|
+        /// | 0    |  1  | Writes initial `Version = 1` marker; no struct changes |
+        ///
+        /// # Panics
+        /// * If the caller is not the Protocol Admin.
+        /// * If the on-chain version is already equal to or greater than `VERSION`.
+        pub fn migrate(env: Env, admin: Address) {
+            admin.require_auth();
+
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Not initialized");
+            assert!(admin == stored_admin, "Unauthorized");
+
+            let current_version: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::Version)
+                .unwrap_or(0);
+
+            assert!(current_version < crate::VERSION, "Already at current version");
+
+            // ── v0 → v1 ──────────────────────────────────────────────────────
+            // No struct changes; spender entries remain wire-compatible.
+            if current_version < 1 {
+                // No data transformation required.
+            }
+
+            // ── write new version ─────────────────────────────────────────────
+            env.storage()
+                .instance()
+                .set(&DataKey::Version, &crate::VERSION);
+        }
+
+        /// Returns the schema version currently stored in instance storage.
+        /// Returns 0 when the contract was deployed before versioning was introduced.
+        pub fn contract_version(env: Env) -> u32 {
+            env.storage()
+                .instance()
+                .get(&DataKey::Version)
+                .unwrap_or(0)
         }
     }
 }

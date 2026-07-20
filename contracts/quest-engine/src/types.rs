@@ -17,6 +17,18 @@ pub struct Quest {
     pub active: bool,
 }
 
+/// Schema used before VERSION 1 was introduced (v0 layout).
+/// Wire-compatible with `Quest`; kept for documentation clarity.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuestV0 {
+    pub employer: Address,
+    pub reward_amount: i128,
+    pub quest_type: QuestType,
+    pub metadata_hash: BytesN<32>,
+    pub active: bool,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubmissionStatus {
@@ -43,4 +55,8 @@ pub enum DataKey {
     RewardPool,
     IsPaused,
     StakeVault,
+    /// Monotonically increasing schema version stored in instance storage.
+    /// 0  = pre-versioning (no Version key present).
+    /// 1  = current schema (this build).
+    Version,
 }

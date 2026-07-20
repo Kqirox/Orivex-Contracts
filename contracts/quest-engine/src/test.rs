@@ -968,3 +968,87 @@ fn test_mixed_quest_types() {
     assert_eq!(build_quest.employer, employer);
     assert_eq!(explore_quest.employer, admin);
 }
+
+// ── Storage versioning & migrations ──────────────────────────────────────────
+
+/// A freshly deployed contract reports version 0 (no Version key set yet).
+#[test]
+fn test_quest_engine_contract_version_initial_zero() {
+    let (_env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    assert_eq!(client.contract_version(), 0);
+}
+
+/// After `migrate()` the stored version equals the compiled VERSION constant.
+#[test]
+fn test_quest_engine_migrate_v0_to_v1_sets_version() {
+    let (_env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+}
+
+/// `migrate()` called twice panics with "Already at current version".
+#[test]
+#[should_panic(expected = "Already at current version")]
+fn test_quest_engine_migrate_twice_panics() {
+    let (_env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+
+    client.migrate(&admin);
+    client.migrate(&admin);
+}
+
+/// Non-admin cannot call `migrate()`.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_quest_engine_migrate_unauthorized_panics() {
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let attacker = Address::generate(&env);
+
+    client.migrate(&attacker);
+}
+
+/// Quest records written before migration are intact afterwards (v0 → v1).
+#[test]
+fn test_quest_engine_migrate_v0_to_v1_preserves_quests() {
+    let (env, client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[9u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &1_000);
+    let quest_id = client.create_build_quest(&employer, &500i128, &hash);
+    let quest_before = client.get_quest(&quest_id).unwrap();
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+
+    let quest_after = client.get_quest(&quest_id).unwrap();
+    assert_eq!(quest_before.employer, quest_after.employer);
+    assert_eq!(quest_before.reward_amount, quest_after.reward_amount);
+    assert_eq!(quest_before.active, quest_after.active);
+}
+
+/// Submissions written before migration are intact afterwards (v0 → v1).
+#[test]
+fn test_quest_engine_migrate_v0_to_v1_preserves_submissions() {
+    let (env, client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[9u8; 32]);
+    let proof = BytesN::from_array(&env, &[5u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &1_000);
+    let quest_id = client.create_build_quest(&employer, &500i128, &hash);
+    client.submit_proof(&learner, &quest_id, &proof);
+
+    let sub_before = client.get_submission(&learner, &quest_id).unwrap();
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+
+    let sub_after = client.get_submission(&learner, &quest_id).unwrap();
+    assert_eq!(sub_before.proof_hash, sub_after.proof_hash);
+    assert_eq!(sub_before.status, sub_after.status);
+}
