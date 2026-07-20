@@ -5,7 +5,7 @@ use soroban_sdk::{
     Address, BytesN, Env,
 };
 
-use crate::{CourseRegistry, CourseRegistryClient, DataKey};
+use crate::{CourseRegistry, CourseRegistryClient, DataKey, BASE_REWARD_AMOUNT, MAX_REWARD_AMOUNT};
 use badge_nft::{BadgeNFT, BadgeNFTClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -22,12 +22,17 @@ fn dummy_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[1u8; 32])
 }
 
+/// Default reward amount used by helper factories.
+fn default_reward() -> i128 {
+    BASE_REWARD_AMOUNT
+}
+
 /// Seeds an initialized contract with one course and returns (admin, instructor, course_id).
 fn setup_with_course(env: &Env, client: &CourseRegistryClient) -> (Address, Address, u32) {
     let admin = Address::generate(env);
     let instructor = Address::generate(env);
     client.initialize(&admin);
-    let id = client.create_course(&admin, &instructor, &5, &dummy_hash(env));
+    let id = client.create_course(&admin, &instructor, &5, &dummy_hash(env), &default_reward());
     (admin, instructor, id)
 }
 
@@ -41,7 +46,7 @@ fn test_create_course_returns_id_one() {
 
     client.initialize(&admin);
 
-    let id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
     assert_eq!(id, 1);
 }
 
@@ -53,13 +58,14 @@ fn test_course_count_increments() {
     let admin = Address::generate(&env);
     let instructor = Address::generate(&env);
     let hash = dummy_hash(&env);
+    let reward = default_reward();
 
     client.initialize(&admin);
 
     assert_eq!(client.course_count(), 0);
-    client.create_course(&admin, &instructor, &2, &hash);
+    client.create_course(&admin, &instructor, &2, &hash, &reward);
     assert_eq!(client.course_count(), 1);
-    client.create_course(&admin, &instructor, &5, &hash);
+    client.create_course(&admin, &instructor, &5, &hash, &reward);
     assert_eq!(client.course_count(), 2);
 }
 
@@ -71,7 +77,54 @@ fn test_zero_modules_panics() {
     let instructor = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &0, &dummy_hash(&env));
+    client.create_course(&admin, &instructor, &0, &dummy_hash(&env), &default_reward());
+}
+
+#[test]
+#[should_panic(expected = "reward_amount must be greater than 0")]
+fn test_zero_reward_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &0i128);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount exceeds maximum")]
+fn test_reward_exceeds_max_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(
+        &admin,
+        &instructor,
+        &3,
+        &dummy_hash(&env),
+        &(MAX_REWARD_AMOUNT + 1),
+    );
+}
+
+#[test]
+fn test_create_course_with_max_reward_succeeds() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+
+    client.initialize(&admin);
+    let id = client.create_course(
+        &admin,
+        &instructor,
+        &3,
+        &dummy_hash(&env),
+        &MAX_REWARD_AMOUNT,
+    );
+
+    let course = client.get_course(&id);
+    assert_eq!(course.reward_amount, MAX_REWARD_AMOUNT);
 }
 
 #[test]
@@ -83,7 +136,7 @@ fn test_unauthorized_admin_panics() {
     let instructor = Address::generate(&env);
 
     client.initialize(&true_admin);
-    client.create_course(&fake_admin, &instructor, &3, &dummy_hash(&env));
+    client.create_course(&fake_admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 }
 
 #[test]
@@ -93,7 +146,7 @@ fn test_course_created_event_emitted() {
     let instructor = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &4, &dummy_hash(&env));
+    client.create_course(&admin, &instructor, &4, &dummy_hash(&env), &default_reward());
 
     assert_eq!(env.events().all().len(), 1);
 }
@@ -173,10 +226,11 @@ fn test_enroll_same_learner_different_courses() {
     let admin = Address::generate(&env);
     let instructor = Address::generate(&env);
     let hash = dummy_hash(&env);
+    let reward = default_reward();
 
     client.initialize(&admin);
-    let id_1 = client.create_course(&admin, &instructor, &4, &hash);
-    let id_2 = client.create_course(&admin, &instructor, &8, &hash);
+    let id_1 = client.create_course(&admin, &instructor, &4, &hash, &reward);
+    let id_2 = client.create_course(&admin, &instructor, &8, &hash, &reward);
 
     let learner = Address::generate(&env);
 
@@ -215,9 +269,10 @@ fn test_create_and_get_course() {
     let admin = Address::generate(&env);
     let instructor = Address::generate(&env);
     let hash = dummy_hash(&env);
+    let reward = 50_0000000i128; // 50 USDC
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &5, &hash);
+    let course_id = client.create_course(&admin, &instructor, &5, &hash, &reward);
 
     // Test: Retrieve the course using get_course
     let retrieved_course = client.get_course(&course_id);
@@ -227,6 +282,7 @@ fn test_create_and_get_course() {
     assert_eq!(retrieved_course.total_modules, 5);
     assert_eq!(retrieved_course.metadata_hash, hash);
     assert!(retrieved_course.active);
+    assert_eq!(retrieved_course.reward_amount, reward);
 }
 
 #[test]
@@ -249,10 +305,12 @@ fn test_multiple_courses() {
     let instructor2 = Address::generate(&env);
     let hash1 = dummy_hash(&env);
     let hash2 = BytesN::from_array(&env, &[2u8; 32]);
+    let reward1 = 10_0000000i128;
+    let reward2 = 25_0000000i128;
 
     client.initialize(&admin);
-    let course_id1 = client.create_course(&admin, &instructor1, &10, &hash1);
-    let course_id2 = client.create_course(&admin, &instructor2, &7, &hash2);
+    let course_id1 = client.create_course(&admin, &instructor1, &10, &hash1, &reward1);
+    let course_id2 = client.create_course(&admin, &instructor2, &7, &hash2, &reward2);
 
     // Test: Retrieve both courses
     let retrieved_course1 = client.get_course(&course_id1);
@@ -261,8 +319,10 @@ fn test_multiple_courses() {
     // Assert: Verify each course is retrieved correctly
     assert_eq!(retrieved_course1.instructor, instructor1);
     assert_eq!(retrieved_course1.total_modules, 10);
+    assert_eq!(retrieved_course1.reward_amount, reward1);
     assert_eq!(retrieved_course2.instructor, instructor2);
     assert_eq!(retrieved_course2.total_modules, 7);
+    assert_eq!(retrieved_course2.reward_amount, reward2);
     assert_ne!(retrieved_course1.instructor, retrieved_course2.instructor);
 }
 
@@ -301,7 +361,7 @@ fn test_is_course_finished_unenrolled_returns_false() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     // Learner has no progress entry at all — should return false
     assert!(!client.is_course_finished(&learner, &1));
@@ -315,7 +375,7 @@ fn test_is_course_finished_partial_progress_returns_false() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &5, &dummy_hash(&env));
+    client.create_course(&admin, &instructor, &5, &dummy_hash(&env), &default_reward());
 
     // Manually write partial progress into storage
     env.as_contract(&client.address, || {
@@ -335,7 +395,7 @@ fn test_is_course_finished_exact_progress_returns_true() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &4, &dummy_hash(&env));
+    client.create_course(&admin, &instructor, &4, &dummy_hash(&env), &default_reward());
 
     // Progress exactly equals total_modules
     env.as_contract(&client.address, || {
@@ -355,7 +415,7 @@ fn test_is_course_finished_excess_progress_returns_true() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     // Progress exceeds total_modules (defensive edge case)
     env.as_contract(&client.address, || {
@@ -416,6 +476,92 @@ fn test_set_course_status_nonexistent_course() {
     client.set_course_status(&admin, &99, &false);
 }
 
+// ── set_course_reward (Issue #34) ─────────────────────────────────────────────
+
+#[test]
+fn test_set_course_reward_success() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+    let new_reward = 50_0000000i128;
+
+    client.set_course_reward(&admin, &id, &new_reward);
+
+    let course = client.get_course(&id);
+    assert_eq!(course.reward_amount, new_reward);
+
+    // Verify event was emitted
+    assert_eq!(env.events().all().len(), 1);
+}
+
+#[test]
+fn test_set_course_reward_multiple_updates() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    client.set_course_reward(&admin, &id, &20_0000000i128);
+    assert_eq!(client.get_course(&id).reward_amount, 20_0000000);
+
+    client.set_course_reward(&admin, &id, &100_0000000i128);
+    assert_eq!(client.get_course(&id).reward_amount, 100_0000000);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_set_course_reward_unauthorized_panics() {
+    let (env, client) = setup();
+    let (_, _, id) = setup_with_course(&env, &client);
+    let fake_admin = Address::generate(&env);
+
+    client.set_course_reward(&fake_admin, &id, &50_0000000i128);
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_set_course_reward_nonexistent_course_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_course_reward(&admin, &99, &50_0000000i128);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount must be greater than 0")]
+fn test_set_course_reward_zero_panics() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    client.set_course_reward(&admin, &id, &0i128);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount exceeds maximum")]
+fn test_set_course_reward_exceeds_max_panics() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    client.set_course_reward(&admin, &id, &(MAX_REWARD_AMOUNT + 1));
+}
+
+#[test]
+fn test_set_course_reward_preserves_other_fields() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    let before = client.get_course(&id);
+    let new_reward = 42_0000000i128;
+
+    client.set_course_reward(&admin, &id, &new_reward);
+
+    let after = client.get_course(&id);
+    assert_eq!(after.reward_amount, new_reward);
+    // All other fields must remain unchanged
+    assert_eq!(after.instructor, before.instructor);
+    assert_eq!(after.total_modules, before.total_modules);
+    assert_eq!(after.metadata_hash, before.metadata_hash);
+    assert_eq!(after.active, before.active);
+}
+
 // ── complete_module Tests ─────────────────────────────────────────────────────
 
 #[test]
@@ -426,7 +572,7 @@ fn test_complete_module_increments_progress() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     // Complete first module
     client.complete_module(&admin, &learner, &course_id);
@@ -440,7 +586,7 @@ fn test_complete_module_emits_event() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     client.complete_module(&admin, &learner, &course_id);
 
@@ -456,7 +602,7 @@ fn test_complete_module_multiple_times() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     // Complete all three modules
     client.complete_module(&admin, &learner, &course_id);
@@ -473,7 +619,7 @@ fn test_complete_module_exceeds_total_modules() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env), &default_reward());
 
     // Complete both modules
     client.complete_module(&admin, &learner, &course_id);
@@ -493,7 +639,7 @@ fn test_complete_module_unauthorized_verifier() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     // Should fail - fake_verifier is not the admin
     client.complete_module(&fake_verifier, &learner, &course_id);
@@ -521,7 +667,7 @@ fn test_complete_module_different_learners() {
     let learner2 = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     // Both learners can progress independently
     client.complete_module(&admin, &learner1, &course_id);
@@ -537,7 +683,7 @@ fn test_get_progress_returns_zero_initially() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     // Progress should be 0 before any modules are completed
     assert_eq!(client.get_progress(&learner, &course_id), 0);
@@ -551,7 +697,7 @@ fn test_get_progress_tracks_completion() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     assert_eq!(client.get_progress(&learner, &course_id), 0);
 
@@ -583,7 +729,7 @@ fn test_badge_minted_on_final_module_completion() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env), &default_reward());
 
     // Deploy BadgeNFT and wire it up
     let badge_client = setup_badge_nft(&env, &client.address);
@@ -606,7 +752,7 @@ fn test_badge_not_minted_on_intermediate_module() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     let badge_client = setup_badge_nft(&env, &client.address);
     client.set_badge_nft_address(&admin, &badge_client.address);
@@ -627,7 +773,7 @@ fn test_badge_minted_for_multiple_learners_independently() {
     let learner_b = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &default_reward());
 
     let badge_client = setup_badge_nft(&env, &client.address);
     client.set_badge_nft_address(&admin, &badge_client.address);
@@ -650,8 +796,8 @@ fn test_badge_minted_for_different_courses_same_learner() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_a = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
-    let course_b = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+    let course_a = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &default_reward());
+    let course_b = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &default_reward());
 
     let badge_client = setup_badge_nft(&env, &client.address);
     client.set_badge_nft_address(&admin, &badge_client.address);
@@ -673,7 +819,7 @@ fn test_complete_module_without_badge_nft_configured_does_not_panic() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &default_reward());
 
     // No badge NFT address set — final module completion must not panic
     client.complete_module(&admin, &learner, &course_id);
@@ -811,7 +957,7 @@ fn test_complete_course_triggers_reward_distribution() {
 
     // Initialise CourseRegistry and create a 2-module course
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env), &default_reward());
 
     // Deploy RewardPool and fund it
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
@@ -852,7 +998,7 @@ fn test_reward_not_distributed_without_whitelist() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &default_reward());
 
     // Deploy RewardPool and fund it — but do NOT whitelist CourseRegistry
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
@@ -874,7 +1020,7 @@ fn test_reward_not_distributed_if_reward_pool_not_set() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &default_reward());
 
     // Wire badge NFT but deliberately omit set_reward_pool_address
     let badge_client = setup_badge_nft(&env, &client.address);
@@ -899,7 +1045,7 @@ fn test_multiple_learners_get_independent_rewards() {
     let learner_b = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &default_reward());
 
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
     token_sac.mint(&reward_pool_client.address, &1_000_000_000); // enough for both
@@ -931,7 +1077,7 @@ fn test_reward_distributed_only_on_final_module() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &default_reward());
 
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
     token_sac.mint(&reward_pool_client.address, &1_000_000_000);
@@ -950,4 +1096,34 @@ fn test_reward_distributed_only_on_final_module() {
     // Module 3 (final) — reward paid out
     client.complete_module(&admin, &learner, &course_id);
     assert_eq!(token_sac.balance(&learner), 10_0000000);
+}
+
+/// Test 6 – Different courses with different reward amounts pay correctly.
+#[test]
+fn test_different_courses_pay_different_rewards() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner_a = Address::generate(&env);
+    let learner_b = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Course 1 pays 10 USDC, Course 2 pays 25 USDC
+    let cheap_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &10_0000000i128);
+    let premium_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env), &25_0000000i128);
+
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000);
+
+    reward_pool_client.add_approved_spender(&admin, &client.address);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // Learner A completes the cheap course → 10 USDC
+    client.complete_module(&admin, &learner_a, &cheap_id);
+    assert_eq!(token_sac.balance(&learner_a), 10_0000000);
+
+    // Learner B completes the premium course → 25 USDC
+    client.complete_module(&admin, &learner_b, &premium_id);
+    assert_eq!(token_sac.balance(&learner_b), 25_0000000);
 }

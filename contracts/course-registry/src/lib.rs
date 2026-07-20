@@ -12,6 +12,17 @@ pub const MAX_COURSE_ID: u32 = u32::MAX;
 pub const DEFAULT_TOTAL_MODULES_BOUND: u32 = 1000;
 
 pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
+// Retained as the canonical default reward — per-course amounts
+// supersede it, but external clients and tests still reference it.
+
+/// Maximum per-course reward of 1 000 000 USDC (7-decimal places).
+pub const MAX_REWARD_AMOUNT: i128 = 1_000_000_0000000;
+
+/// Current storage-layout version. Bumped on every breaking schema change.
+/// **Migration dependency**: when upgrading from a prior version the new
+/// `reward_amount` field on `Course` won't exist in old storage entries.
+/// Storage migration logic is deferred to Issue #35.
+pub const CURRENT_CONTRACT_VERSION: u32 = 1;
 // Crate overview — manages the lifecycle of on-chain courses,
 // their progress records, course completion mint of soulbound
 // badges, and RewardPool payout triggering.
@@ -85,6 +96,15 @@ pub struct ContractUpgraded {
     pub new_wasm_hash: BytesN<32>,
 }
 
+#[contractevent]
+pub struct RewardUpdated {
+    #[topic]
+    pub id: u32,
+    #[topic]
+    pub admin: Address,
+    pub new_reward: i128,
+}
+
 #[contractimpl]
 impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
@@ -98,6 +118,9 @@ impl CourseRegistry {
             panic!("Already initialized");
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::ContractVersion, &CURRENT_CONTRACT_VERSION);
     }
 
     /// Registers the RewardPool contract address so the registry can trigger payouts on completion.
@@ -153,6 +176,7 @@ impl CourseRegistry {
     /// Allocates the next monotonically-increasing course ID and stores
     /// the resulting `Course` struct in persistent storage under
     /// `DataKey::Course(id)`. `total_modules` must be strictly positive;
+    /// `reward_amount` must be > 0 and ≤ `MAX_REWARD_AMOUNT`.
     /// the cap on courses is bounded by the `u32` return value.
     pub fn create_course(
         env: Env,
@@ -160,6 +184,7 @@ impl CourseRegistry {
         instructor: Address,
         total_modules: u32,
         metadata_hash: BytesN<32>,
+        reward_amount: i128,
     ) -> u32 {
         admin.require_auth();
 
@@ -174,6 +199,11 @@ impl CourseRegistry {
         );
 
         assert!(total_modules > 0, "total_modules must be greater than 0");
+        assert!(reward_amount > 0, "reward_amount must be greater than 0");
+        assert!(
+            reward_amount <= MAX_REWARD_AMOUNT,
+            "reward_amount exceeds maximum"
+        );
 
         let current_count: u32 = env
             .storage()
@@ -188,6 +218,7 @@ impl CourseRegistry {
             total_modules,
             metadata_hash,
             active: true,
+            reward_amount,
         };
         env.storage()
             .persistent()
@@ -304,6 +335,51 @@ impl CourseRegistry {
 
         // 5. Emit the standard event
         CourseStatusChanged { id, active }.publish(&env);
+    }
+
+    /// Updates the reward amount for an existing course. Only callable by the Protocol Admin.
+    /// Replaces the course's reward_amount with `new_reward`. Must be
+    /// greater than 0 and at most `MAX_REWARD_AMOUNT`. The target
+    /// course must exist in storage. Persists the updated `Course`
+    /// struct and is the primary migration path for existing courses
+    /// that were created before per-course reward configuration was
+    /// introduced.
+    pub fn set_course_reward(env: Env, admin: Address, id: u32, new_reward: i128) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        assert!(new_reward > 0, "reward_amount must be greater than 0");
+        assert!(
+            new_reward <= MAX_REWARD_AMOUNT,
+            "reward_amount exceeds maximum"
+        );
+
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        course.reward_amount = new_reward;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(id), &course);
+
+        RewardUpdated {
+            id,
+            admin,
+            new_reward,
+        }
+        .publish(&env);
     }
 
     /// Returns true if the learner has completed all modules in the course.
@@ -466,25 +542,28 @@ impl CourseRegistry {
             }
 
             // 10. Trigger reward distribution if RewardPool address is configured
-            if let Some(reward_pool_address) = env
-                .storage()
-                .instance()
-                .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
-            {
-                let reward_pool = RewardPoolClient::new(&env, &reward_pool_address);
-                let base_reward: i128 = 10_0000000; // 10 USDC (7 decimal places)
-                reward_pool.distribute_reward(
-                    &env.current_contract_address(),
-                    &learner,
-                    &base_reward,
-                );
+            //     and the course has a non-zero reward amount.
+            let reward_amount = course.reward_amount;
+            if reward_amount > 0 {
+                if let Some(reward_pool_address) = env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
+                {
+                    let reward_pool = RewardPoolClient::new(&env, &reward_pool_address);
+                    reward_pool.distribute_reward(
+                        &env.current_contract_address(),
+                        &learner,
+                        &reward_amount,
+                    );
 
-                CourseCompleted {
-                    learner: learner.clone(),
-                    course_id: id,
-                    reward_amount: base_reward,
+                    CourseCompleted {
+                        learner: learner.clone(),
+                        course_id: id,
+                        reward_amount,
+                    }
+                    .publish(&env);
                 }
-                .publish(&env);
             }
         }
     }
