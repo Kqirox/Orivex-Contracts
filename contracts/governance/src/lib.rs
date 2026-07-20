@@ -23,6 +23,8 @@ pub mod types;
 pub use types::{DataKey, Proposal};
 
 const BADGE_NFT_KEY: Symbol = symbol_short!("badge");
+/// Instance-storage key for the running proposal-ID counter.
+const PROPOSAL_ID_KEY: Symbol = symbol_short!("propid");
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,6 +56,13 @@ pub struct ProposalCancelled {
 }
 
 #[contractevent]
+pub struct ProposalCreated {
+    #[topic]
+    pub proposal_id: u32,
+    pub proposer: Address,
+}
+
+#[contractevent]
 pub struct ContractUpgraded {
     #[topic]
     pub admin: Address,
@@ -76,6 +85,77 @@ impl Governance {
         env.storage()
             .instance()
             .set(&BADGE_NFT_KEY, &badge_contract_address);
+    }
+
+    /// Creates a new governance proposal.
+    ///
+    /// Any caller may create a proposal; the proposer must authorize the call.
+    /// The proposal is stored in persistent storage and the proposal ID counter
+    /// is incremented.
+    ///
+    /// # Arguments
+    /// * `proposer` — the address submitting the proposal (must sign).
+    /// * `metadata_hash` — 32-byte hash pointing at the proposal description.
+    /// * `voting_period_seconds` — seconds from now until voting closes.
+    ///
+    /// # Returns
+    /// The new proposal ID.
+    pub fn create_proposal(
+        env: Env,
+        proposer: Address,
+        metadata_hash: BytesN<32>,
+        voting_period_seconds: u64,
+    ) -> u32 {
+        proposer.require_auth();
+
+        // Require the contract to be initialized.
+        let _: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+
+        let proposal_id: u32 = env
+            .storage()
+            .instance()
+            .get(&PROPOSAL_ID_KEY)
+            .unwrap_or(0u32)
+            + 1;
+        env.storage()
+            .instance()
+            .set(&PROPOSAL_ID_KEY, &proposal_id);
+
+        let end_time = env.ledger().timestamp() + voting_period_seconds;
+        let proposal = Proposal {
+            id: proposal_id,
+            proposer: proposer.clone(),
+            metadata_hash,
+            votes_for: 0,
+            votes_against: 0,
+            end_time,
+            executed: false,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+
+        // Increment the footprint counter.
+        let prev: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposalCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposalCount, &(prev + 1));
+
+        ProposalCreated {
+            proposal_id,
+            proposer,
+        }
+        .publish(&env);
+
+        proposal_id
     }
 
     /// Returns the proposal stored for the given proposal ID.
@@ -125,6 +205,105 @@ impl Governance {
             .persistent()
             .set(&DataKey::Proposal(proposal_id), &proposal);
         env.storage().persistent().set(&vote_key, &true);
+
+        // Increment the vote-count footprint counter.
+        let prev: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::VoteCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::VoteCount, &(prev + 1));
+    }
+
+    /// Returns an estimated count of persistent storage entries for this contract.
+    ///
+    /// Sums:
+    /// * `ProposalCount` — one entry per proposal ever created.
+    /// * `VoteCount` — one entry per ballot cast.
+    pub fn estimated_storage_footprint(env: Env) -> u32 {
+        let proposals: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposalCount)
+            .unwrap_or(0);
+        let votes: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::VoteCount)
+            .unwrap_or(0);
+        proposals + votes
+    }
+
+    /// Removes persistent-storage entries for a list of finalised (executed or
+    /// cancelled) proposals and their associated vote records.
+    ///
+    /// # Admin-only
+    ///
+    /// # Arguments
+    /// * `admin` — must match the stored Protocol Admin.
+    /// * `sweep_learning_keys` — when `false` this is a no-op (returns 0).
+    /// * `proposal_ids` — IDs of executed/cancelled proposals to reclaim.
+    ///   Only proposals where `executed == true` are removed.
+    ///
+    /// # Returns
+    /// Number of proposal entries removed (vote entries are also removed but
+    /// not separately counted here).
+    pub fn sweep_storage(
+        env: Env,
+        admin: Address,
+        sweep_learning_keys: bool,
+        proposal_ids: Vec<u32>,
+    ) -> u32 {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        if !sweep_learning_keys {
+            return 0;
+        }
+
+        let mut removed: u32 = 0;
+        let limit = if proposal_ids.len() > 50 {
+            50
+        } else {
+            proposal_ids.len()
+        };
+
+        for i in 0..limit {
+            let proposal_id = proposal_ids.get(i).expect("index invariant");
+            let key = DataKey::Proposal(proposal_id);
+
+            if let Some(proposal) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, Proposal>(&key)
+            {
+                if proposal.executed {
+                    env.storage().persistent().remove(&key);
+
+                    let prev: u32 = env
+                        .storage()
+                        .instance()
+                        .get(&DataKey::ProposalCount)
+                        .unwrap_or(0);
+                    if prev > 0 {
+                        env.storage()
+                            .instance()
+                            .set(&DataKey::ProposalCount, &(prev - 1));
+                    }
+                    removed += 1;
+                }
+            }
+        }
+
+        removed
     }
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.

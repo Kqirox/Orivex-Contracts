@@ -211,6 +211,16 @@ impl QuestEngineContract {
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
 
+        // Increment the quest-count footprint tracker.
+        let prev_qcount: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::QuestCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::QuestCount, &(prev_qcount + 1));
+
         // 7. Emit QuestCreated event.
         QuestCreated {
             employer,
@@ -283,6 +293,16 @@ impl QuestEngineContract {
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
 
+        // Increment the quest-count footprint tracker.
+        let prev_qcount: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::QuestCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::QuestCount, &(prev_qcount + 1));
+
         // 6. Emit QuestCreated event
         QuestCreated {
             employer: admin,
@@ -338,6 +358,16 @@ impl QuestEngineContract {
             status: SubmissionStatus::Pending,
         };
         env.storage().persistent().set(&submission_key, &submission);
+
+        // Increment submission-count footprint tracker.
+        let prev_scount: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::SubmissionCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::SubmissionCount, &(prev_scount + 1));
 
         // 6. Emit ProofSubmitted event.
         ProofSubmitted {
@@ -595,6 +625,100 @@ impl QuestEngineContract {
             approved_count,
         }
         .publish(&env);
+    }
+
+    /// Returns an estimated count of persistent storage entries for this contract.
+    ///
+    /// Counts:
+    /// * `QuestCount` — one entry per quest created.
+    /// * `SubmissionCount` — one entry per proof submission.
+    ///
+    /// Both counters live in instance storage and are maintained inline so no
+    /// storage scan is needed.
+    pub fn estimated_storage_footprint(env: Env) -> u32 {
+        let quest_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::QuestCount)
+            .unwrap_or(0);
+        let submission_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::SubmissionCount)
+            .unwrap_or(0);
+        quest_count + submission_count
+    }
+
+    /// Removes the persistent-storage entries for a list of finalised submissions
+    /// (approved or rejected) and inactive quests, recovering rent.
+    ///
+    /// # Admin-only
+    /// Only the Protocol Admin may call this function.
+    ///
+    /// # Arguments
+    /// * `admin` — must match the stored Protocol Admin.
+    /// * `sweep_learning_keys` — when `false` this is a no-op (returns 0).
+    /// * `submissions` — at most `SWEEP_BATCH_SIZE` `(learner, quest_id)` pairs
+    ///   whose storage entries should be removed.  Only entries whose status is
+    ///   `Approved` or `Rejected` are removed; pending submissions are left
+    ///   untouched.
+    ///
+    /// # Returns
+    /// Number of submission entries actually removed.
+    pub fn sweep_submissions(
+        env: Env,
+        admin: Address,
+        sweep_learning_keys: bool,
+        submissions: Vec<(Address, u32)>,
+    ) -> u32 {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        if !sweep_learning_keys {
+            return 0;
+        }
+
+        let mut removed: u32 = 0;
+        let limit = if submissions.len() > 50 {
+            50
+        } else {
+            submissions.len()
+        };
+
+        for i in 0..limit {
+            let (learner, quest_id) = submissions.get(i).expect("index invariant");
+            let key = DataKey::Submission(learner, quest_id);
+
+            if let Some(sub) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, Submission>(&key)
+            {
+                if sub.status != SubmissionStatus::Pending {
+                    env.storage().persistent().remove(&key);
+
+                    let prev: u32 = env
+                        .storage()
+                        .instance()
+                        .get(&DataKey::SubmissionCount)
+                        .unwrap_or(0);
+                    if prev > 0 {
+                        env.storage()
+                            .instance()
+                            .set(&DataKey::SubmissionCount, &(prev - 1));
+                    }
+                    removed += 1;
+                }
+            }
+        }
+
+        removed
     }
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.

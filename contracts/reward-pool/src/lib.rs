@@ -28,6 +28,7 @@ pub trait RewardPoolInterface {
     fn fund_pool(env: Env, donor: Address, amount: i128);
     fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address);
     fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>);
+    fn estimated_storage_footprint(env: Env) -> u32;
 }
 
 #[contractevent]
@@ -154,9 +155,22 @@ mod contract_impl {
             admin.require_auth();
 
             // 4. Save `true` to Persistent storage using DataKey::Spender(spender.clone())
-            env.storage()
-                .persistent()
-                .set(&DataKey::Spender(spender.clone()), &true);
+            let spender_key = DataKey::Spender(spender.clone());
+            let is_new: bool = !env.storage().persistent().has(&spender_key);
+            env.storage().persistent().set(&spender_key, &true);
+
+            // Only bump the counter for genuinely new spenders (idempotent re-adds
+            // should not inflate the footprint estimate).
+            if is_new {
+                let prev: u32 = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::SpenderCount)
+                    .unwrap_or(0);
+                env.storage()
+                    .instance()
+                    .set(&DataKey::SpenderCount, &(prev + 1));
+            }
 
             // 5. Emit SpenderAdded event
             SpenderAdded { spender }.publish(&env);
@@ -350,6 +364,17 @@ mod contract_impl {
                 amount: balance,
             }
             .publish(&env);
+        }
+
+        /// Returns the estimated number of persistent storage entries for this
+        /// contract.  Each whitelisted spender contributes one
+        /// `DataKey::Spender(Address)` entry. The count is maintained by
+        /// `add_approved_spender`.
+        pub fn estimated_storage_footprint(env: Env) -> u32 {
+            env.storage()
+                .instance()
+                .get(&DataKey::SpenderCount)
+                .unwrap_or(0)
         }
 
         /// Upgrades the contract WASM. Only callable by the Protocol Admin.

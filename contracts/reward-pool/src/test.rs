@@ -548,3 +548,35 @@ fn test_emergency_sweep_large_balance() {
     assert_eq!(token_client.balance(&client.address), 0);
     assert_eq!(token_client.balance(&recovery_wallet), 1_000_000);
 }
+
+// ── estimated_storage_footprint ───────────────────────────────────────────────
+
+#[test]
+fn test_reward_pool_footprint_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    client.initialize(&admin, &token);
+    assert_eq!(client.estimated_storage_footprint(), 0);
+}
+
+#[test]
+fn test_reward_pool_footprint_increments_per_unique_spender() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    client.initialize(&admin, &token);
+
+    let spender_a = Address::generate(&env);
+    let spender_b = Address::generate(&env);
+
+    client.add_approved_spender(&admin, &spender_a);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    // Re-adding the same spender is idempotent — no counter bump
+    client.add_approved_spender(&admin, &spender_a);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    client.add_approved_spender(&admin, &spender_b);
+    assert_eq!(client.estimated_storage_footprint(), 2);
+}

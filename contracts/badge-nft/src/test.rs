@@ -448,3 +448,51 @@ fn test_has_badge_multiple_badges() {
     assert!(!client.has_badge(&learner, &4));
     assert!(client.has_badge(&learner, &5));
 }
+
+// ── estimated_storage_footprint ───────────────────────────────────────────────
+
+#[test]
+fn test_badge_estimated_footprint_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    assert_eq!(client.estimated_storage_footprint(), 0);
+}
+
+#[test]
+fn test_badge_estimated_footprint_one_per_holder() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    let learner_a = Address::generate(&env);
+    let learner_b = Address::generate(&env);
+
+    // Mint first badge for learner_a — creates a new holder slot
+    client.mint_badge(&admin, &learner_a, &1);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    // Mint second badge for learner_a — same slot, count stays at 1
+    client.mint_badge(&admin, &learner_a, &2);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    // Mint a badge for learner_b — new holder slot
+    client.mint_badge(&admin, &learner_b, &1);
+    assert_eq!(client.estimated_storage_footprint(), 2);
+}
+
+#[test]
+fn test_badge_estimated_footprint_unaffected_by_revoke() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    let learner = Address::generate(&env);
+    client.mint_badge(&admin, &learner, &10);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    // Revoking a badge removes from the vec but the key still exists
+    client.revoke_badge(&admin, &learner, &10);
+    // Footprint counter stays at 1 — the Vec key is still present (empty)
+    assert_eq!(client.estimated_storage_footprint(), 1);
+}

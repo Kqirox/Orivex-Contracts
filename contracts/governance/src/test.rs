@@ -418,3 +418,126 @@ fn test_upgrade_contract_not_initialized_panics() {
     let new_wasm_hash = BytesN::from_array(&env, &[0xabu8; 32]);
     governance_client.upgrade_contract(&attacker, &new_wasm_hash);
 }
+
+// ── sweep_storage / estimated_storage_footprint ───────────────────────────────
+
+#[test]
+fn test_governance_estimated_footprint_initial_zero() {
+    let (_env, governance_client, badge_client, admin) = setup();
+    governance_client.initialize(&admin, &badge_client.address);
+    assert_eq!(governance_client.estimated_storage_footprint(), 0);
+}
+
+#[test]
+fn test_governance_create_proposal_increments_footprint() {
+    let (env, governance_client, badge_client, admin) = setup();
+    governance_client.initialize(&admin, &badge_client.address);
+
+    let proposer = Address::generate(&env);
+    governance_client.create_proposal(&proposer, &dummy_hash(&env), &1_000);
+    assert_eq!(governance_client.estimated_storage_footprint(), 1);
+
+    governance_client.create_proposal(&proposer, &dummy_hash(&env), &1_000);
+    assert_eq!(governance_client.estimated_storage_footprint(), 2);
+}
+
+#[test]
+fn test_governance_cast_vote_increments_footprint() {
+    let (env, governance_client, badge_client, admin) = setup();
+    governance_client.initialize(&admin, &badge_client.address);
+    badge_client.initialize(&admin);
+
+    let proposer = Address::generate(&env);
+    let proposal_id = governance_client.create_proposal(&proposer, &dummy_hash(&env), &1_000);
+
+    let voter = Address::generate(&env);
+    badge_client.mint_badge(&admin, &voter, &1);
+    governance_client.cast_vote(&voter, &proposal_id, &true);
+
+    // 1 proposal + 1 vote
+    assert_eq!(governance_client.estimated_storage_footprint(), 2);
+}
+
+#[test]
+fn test_governance_sweep_storage_removes_executed_proposal() {
+    let (env, governance_client, badge_client, admin) = setup();
+    governance_client.initialize(&admin, &badge_client.address);
+    badge_client.initialize(&admin);
+
+    let proposer = Address::generate(&env);
+    let proposal_id = governance_client.create_proposal(&proposer, &dummy_hash(&env), &500);
+
+    // Advance time past voting period so we can execute.
+    env.ledger().with_mut(|l| l.timestamp = 600);
+
+    // Proposal has 0 votes_for so won't pass a normal execution — seed a winning vote first.
+    let voter = Address::generate(&env);
+    // Re-create the proposal at a future end_time so vote is still valid.
+    // Use seed_proposal helper to place a winnable proposal.
+    env.as_contract(&governance_client.address, || {
+        env.storage().persistent().set(
+            &DataKey::Proposal(proposal_id),
+            &Proposal {
+                id: proposal_id,
+                proposer: proposer.clone(),
+                metadata_hash: dummy_hash(&env),
+                votes_for: 1,
+                votes_against: 0,
+                end_time: 500, // already passed
+                executed: false,
+            },
+        );
+    });
+
+    governance_client.execute_proposal(&proposal_id);
+
+    // FootPrint: 1 proposal (still in storage, just marked executed)
+    assert_eq!(governance_client.estimated_storage_footprint(), 1);
+
+    let ids = soroban_sdk::vec![&env, proposal_id];
+    let removed = governance_client.sweep_storage(&admin, &true, &ids);
+    assert_eq!(removed, 1);
+    assert_eq!(governance_client.estimated_storage_footprint(), 0);
+    let _ = voter;
+}
+
+#[test]
+fn test_governance_sweep_storage_noop_when_flag_false() {
+    let (env, governance_client, badge_client, admin) = setup();
+    governance_client.initialize(&admin, &badge_client.address);
+
+    let proposer = Address::generate(&env);
+    let proposal_id = governance_client.create_proposal(&proposer, &dummy_hash(&env), &1_000);
+
+    // Mark as executed via raw storage (already-executed path)
+    env.as_contract(&governance_client.address, || {
+        env.storage().persistent().set(
+            &DataKey::Proposal(proposal_id),
+            &Proposal {
+                id: proposal_id,
+                proposer: proposer.clone(),
+                metadata_hash: dummy_hash(&env),
+                votes_for: 1,
+                votes_against: 0,
+                end_time: 0,
+                executed: true,
+            },
+        );
+    });
+
+    let ids = soroban_sdk::vec![&env, proposal_id];
+    let removed = governance_client.sweep_storage(&admin, &false, &ids);
+    assert_eq!(removed, 0);
+    // Footprint unchanged (sweep was no-op)
+    assert_eq!(governance_client.estimated_storage_footprint(), 1);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_governance_sweep_storage_non_admin_panics() {
+    let (env, governance_client, badge_client, admin) = setup();
+    governance_client.initialize(&admin, &badge_client.address);
+    let attacker = Address::generate(&env);
+    let ids = soroban_sdk::vec![&env, 1u32];
+    governance_client.sweep_storage(&attacker, &true, &ids);
+}

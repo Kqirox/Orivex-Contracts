@@ -968,3 +968,110 @@ fn test_mixed_quest_types() {
     assert_eq!(build_quest.employer, employer);
     assert_eq!(explore_quest.employer, admin);
 }
+
+// ── estimated_storage_footprint / sweep_submissions ──────────────────────────
+
+#[test]
+fn test_quest_engine_footprint_initial_zero() {
+    let (_env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    assert_eq!(client.estimated_storage_footprint(), 0);
+}
+
+#[test]
+fn test_quest_engine_footprint_tracks_quests_and_submissions() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &1_000);
+    let quest_id = client.create_build_quest(&employer, &1_000, &hash);
+
+    // 1 quest, 0 submissions
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    let learner = Address::generate(&env);
+    let proof = BytesN::from_array(&env, &[3u8; 32]);
+    client.submit_proof(&learner, &quest_id, &proof);
+
+    // 1 quest + 1 submission
+    assert_eq!(client.estimated_storage_footprint(), 2);
+}
+
+#[test]
+fn test_quest_engine_sweep_submissions_removes_reviewed_entry() {
+    let (env, client, token_id, _reward_pool, employer_addr, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[4u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &1_000);
+    let quest_id = client.create_build_quest(&employer, &1_000, &hash);
+
+    let learner = Address::generate(&env);
+    let proof = BytesN::from_array(&env, &[5u8; 32]);
+    client.submit_proof(&learner, &quest_id, &proof);
+
+    // Reject the submission (sets status to Rejected)
+    client.review_submission(&employer, &learner, &quest_id, &false);
+
+    // 1 quest + 1 submission still in storage before sweep
+    assert_eq!(client.estimated_storage_footprint(), 2);
+
+    let pairs = soroban_sdk::vec![&env, (learner.clone(), quest_id)];
+    let removed = client.sweep_submissions(&employer_addr, &true, &pairs);
+    assert_eq!(removed, 1);
+
+    // Submission entry removed; only quest remains
+    assert_eq!(client.estimated_storage_footprint(), 1);
+    assert!(client.get_submission(&learner, &quest_id).is_none());
+}
+
+#[test]
+fn test_quest_engine_sweep_submissions_skips_pending() {
+    let (env, client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[6u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &1_000);
+    let quest_id = client.create_build_quest(&employer, &1_000, &hash);
+
+    let learner = Address::generate(&env);
+    let proof = BytesN::from_array(&env, &[7u8; 32]);
+    client.submit_proof(&learner, &quest_id, &proof);
+
+    // Attempt to sweep a still-pending submission
+    let pairs = soroban_sdk::vec![&env, (learner.clone(), quest_id)];
+    let removed = client.sweep_submissions(&admin, &true, &pairs);
+    assert_eq!(removed, 0);
+
+    // Submission still present
+    assert!(client.get_submission(&learner, &quest_id).is_some());
+}
+
+#[test]
+fn test_quest_engine_sweep_submissions_noop_when_flag_false() {
+    let (env, client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[8u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &1_000);
+    let quest_id = client.create_build_quest(&employer, &1_000, &hash);
+
+    let learner = Address::generate(&env);
+    let proof = BytesN::from_array(&env, &[9u8; 32]);
+    client.submit_proof(&learner, &quest_id, &proof);
+    client.review_submission(&employer, &learner, &quest_id, &false);
+
+    let pairs = soroban_sdk::vec![&env, (learner.clone(), quest_id)];
+    let removed = client.sweep_submissions(&admin, &false, &pairs);
+    assert_eq!(removed, 0);
+    assert_eq!(client.estimated_storage_footprint(), 2);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_quest_engine_sweep_submissions_non_admin_panics() {
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let attacker = Address::generate(&env);
+    let pairs = soroban_sdk::vec![&env, (attacker.clone(), 1u32)];
+    client.sweep_submissions(&attacker, &true, &pairs);
+}

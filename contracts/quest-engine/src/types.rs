@@ -43,4 +43,10 @@ pub enum DataKey {
     RewardPool,
     IsPaused,
     StakeVault,
+    /// Running count of active Quest entries in persistent storage.
+    /// Incremented on quest creation. Used by `estimated_storage_footprint`.
+    QuestCount,
+    /// Running count of Submission entries in persistent storage.
+    /// Incremented on submit_proof. Used by `estimated_storage_footprint`.
+    SubmissionCount,
 }

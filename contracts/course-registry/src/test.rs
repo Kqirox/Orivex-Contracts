@@ -951,3 +951,164 @@ fn test_reward_distributed_only_on_final_module() {
     client.complete_module(&admin, &learner, &course_id);
     assert_eq!(token_sac.balance(&learner), 10_0000000);
 }
+
+// ── sweep_storage ─────────────────────────────────────────────────────────────
+
+/// estimated_storage_footprint returns 0 on a fresh, empty contract.
+#[test]
+fn test_estimated_footprint_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    assert_eq!(client.estimated_storage_footprint(), 0);
+}
+
+/// Footprint grows by 1 for each course created and 1 for each enroll.
+#[test]
+fn test_estimated_footprint_tracks_courses_and_enrolments() {
+    let (env, client) = setup();
+    let (admin, instructor, course_id) = setup_with_course(&env, &client);
+
+    // 1 course created
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    let learner = Address::generate(&env);
+    client.enroll(&learner, &course_id);
+
+    // 1 course + 1 progress entry
+    assert_eq!(client.estimated_storage_footprint(), 2);
+
+    // second course adds another course entry
+    client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+    assert_eq!(client.estimated_storage_footprint(), 3);
+}
+
+/// sweep_storage with sweep_learning_keys=false is a no-op and returns 0.
+#[test]
+fn test_sweep_storage_noop_when_flag_false() {
+    let (env, client) = setup();
+    let (admin, _instructor, course_id) = setup_with_course(&env, &client);
+
+    let learner = Address::generate(&env);
+    client.enroll(&learner, &course_id);
+    // complete the single module so the learner is finished
+    client.complete_module(&admin, &learner, &course_id);
+
+    let removed = client.sweep_storage(&admin, &false);
+    assert_eq!(removed, 0);
+
+    // Progress entry should still exist because sweep was a no-op
+    assert_eq!(client.get_progress(&learner, &course_id), 1);
+}
+
+/// sweep_storage removes the progress entry for a completed learner.
+#[test]
+fn test_sweep_storage_removes_finished_progress_entry() {
+    let (env, client) = setup();
+    let (admin, _instructor, course_id) = setup_with_course(&env, &client);
+
+    let learner = Address::generate(&env);
+    client.enroll(&learner, &course_id);
+    // setup_with_course creates a 5-module course; complete all 5
+    for _ in 0..5 {
+        client.complete_module(&admin, &learner, &course_id);
+    }
+
+    // Footprint before sweep: 1 course + 1 progress
+    assert_eq!(client.estimated_storage_footprint(), 2);
+
+    let removed = client.sweep_storage(&admin, &true);
+    assert_eq!(removed, 1);
+
+    // Progress entry gone; footprint drops by 1
+    assert_eq!(client.estimated_storage_footprint(), 1);
+    // get_progress now returns 0 (entry removed)
+    assert_eq!(client.get_progress(&learner, &course_id), 0);
+}
+
+/// sweep_storage returns 0 when the finished index is empty.
+#[test]
+fn test_sweep_storage_empty_index_returns_zero() {
+    let (env, client) = setup();
+    let (admin, _instructor, _course_id) = setup_with_course(&env, &client);
+
+    let removed = client.sweep_storage(&admin, &true);
+    assert_eq!(removed, 0);
+}
+
+/// sweep_storage is limited to SWEEP_BATCH_SIZE per call.
+#[test]
+fn test_sweep_storage_respects_batch_size() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    client.initialize(&admin);
+    // Create a 1-module course so each learner finishes immediately.
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+
+    // Enroll and complete more learners than SWEEP_BATCH_SIZE (50).
+    let batch_size: u32 = crate::SWEEP_BATCH_SIZE;
+    let extra: u32 = 10;
+    let total_learners = batch_size + extra;
+
+    for _ in 0..total_learners {
+        let learner = Address::generate(&env);
+        client.enroll(&learner, &course_id);
+        client.complete_module(&admin, &learner, &course_id);
+    }
+
+    // First sweep should remove exactly SWEEP_BATCH_SIZE entries.
+    let removed_first = client.sweep_storage(&admin, &true);
+    assert_eq!(removed_first, batch_size);
+
+    // Second sweep clears the remainder.
+    let removed_second = client.sweep_storage(&admin, &true);
+    assert_eq!(removed_second, extra);
+
+    // Nothing left.
+    let removed_third = client.sweep_storage(&admin, &true);
+    assert_eq!(removed_third, 0);
+}
+
+/// sweep_storage panics when called by a non-admin.
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_sweep_storage_unauthorized_panics() {
+    let (env, client) = setup();
+    let (admin, _instructor, _course_id) = setup_with_course(&env, &client);
+    let attacker = Address::generate(&env);
+    // admin field is the attacker but stored admin is different
+    let _ = client.sweep_storage(&attacker, &true);
+    let _ = admin; // suppress unused warning
+}
+
+/// Multiple learners finishing different courses are all swept correctly.
+#[test]
+fn test_sweep_storage_multiple_learners_multiple_courses() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    client.initialize(&admin);
+
+    let course_a = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+    let course_b = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+
+    let learner_a = Address::generate(&env);
+    let learner_b = Address::generate(&env);
+
+    client.enroll(&learner_a, &course_a);
+    client.complete_module(&admin, &learner_a, &course_a);
+
+    client.enroll(&learner_b, &course_b);
+    client.complete_module(&admin, &learner_b, &course_b);
+
+    // 2 courses + 2 progress entries
+    assert_eq!(client.estimated_storage_footprint(), 4);
+
+    // One sweep removes both finished entries (well within SWEEP_BATCH_SIZE)
+    let removed = client.sweep_storage(&admin, &true);
+    assert_eq!(removed, 2);
+
+    // Only the 2 course entries remain
+    assert_eq!(client.estimated_storage_footprint(), 2);
+}

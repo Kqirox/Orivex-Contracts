@@ -18,4 +18,8 @@ pub enum DataKey {
     Proposal(u32),
     UserVote(Address, u32),
     Admin,
+    /// Running count of Proposal entries in persistent storage.
+    ProposalCount,
+    /// Running count of UserVote entries in persistent storage.
+    VoteCount,
 }

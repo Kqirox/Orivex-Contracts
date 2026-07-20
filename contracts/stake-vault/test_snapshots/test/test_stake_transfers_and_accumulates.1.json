@@ -291,6 +291,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "StakerCount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 0
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Token"
                             }
                           ]

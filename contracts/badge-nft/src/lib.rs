@@ -28,6 +28,7 @@ pub trait BadgeNFTInterface {
     fn get_badges(env: Env, learner: Address) -> Vec<Badge>;
     fn get_badge_count(env: Env, learner: Address) -> u32;
     fn has_badge(env: Env, learner: Address, course_id: u32) -> bool;
+    fn estimated_storage_footprint(env: Env) -> u32;
 }
 
 #[contractevent]
@@ -121,6 +122,9 @@ mod contract_impl {
                 }
             }
 
+            // If this is a brand-new badge vec, increment the holder counter.
+            let is_new_holder = badges.is_empty();
+
             let minted_at = env.ledger().timestamp();
             let new_badge = Badge {
                 course_id,
@@ -128,6 +132,17 @@ mod contract_impl {
             };
             badges.push_back(new_badge);
             env.storage().persistent().set(&badges_key, &badges);
+
+            if is_new_holder {
+                let prev: u32 = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::BadgeHolderCount)
+                    .unwrap_or(0);
+                env.storage()
+                    .instance()
+                    .set(&DataKey::BadgeHolderCount, &(prev + 1));
+            }
 
             BadgeMinted {
                 learner,
@@ -248,6 +263,20 @@ mod contract_impl {
                 }
             }
             false
+        }
+
+        /// Returns the estimated number of persistent storage entries held by
+        /// this contract.
+        ///
+        /// Each unique learner that has ever received at least one badge
+        /// contributes one `DataKey::UserBadges(Address)` entry.  The count is
+        /// maintained via the `BadgeHolderCount` instance-storage counter which
+        /// is incremented the first time a learner's badge vec is created.
+        pub fn estimated_storage_footprint(env: Env) -> u32 {
+            env.storage()
+                .instance()
+                .get(&DataKey::BadgeHolderCount)
+                .unwrap_or(0)
         }
 
         /// Upgrades the contract WASM. Only callable by the Protocol Admin.
