@@ -1,4 +1,18 @@
-name: Rust CI
+# ─────────────────────────────────────────────────────────────────────────────
+# Orivex-Contracts CI
+#
+# Job topology (all run on ubuntu-latest):
+#
+#   contracts-fmt   ──┐
+#   contracts-clippy──┼──► contracts-test (matrix, 6 jobs) ──► contracts-coverage
+#                     └──► contracts-build-wasm
+#
+# Each job is independent so a single failing crate doesn't block unrelated
+# feedback.  The matrix test jobs feed into a lightweight coverage job that
+# runs llvm-cov over the whole workspace and posts a summary comment on PRs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
 
 on:
   push:
@@ -11,42 +25,236 @@ on:
       - synchronize
       - reopened
 
+# Cancel redundant in-progress runs on the same ref so we don't burn minutes
+# on stale pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # llvm-cov threshold enforced in the coverage job
+  COVERAGE_THRESHOLD: "80"
+
 jobs:
-  ci:
-    name: Rust CI
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Formatting (workspace-wide, fastest gate)
+  # ─────────────────────────────────────────────────────────────────────────
+  contracts-fmt:
+    name: "fmt"
     runs-on: ubuntu-latest
-    
     defaults:
       run:
         working-directory: ./contracts
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-          targets: wasm32-unknown-unknown, wasm32v1-none
-
-      - name: Cache cargo build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          workspaces: "./contracts"
-
-      - name: Install Stellar CLI
-        uses: stellar/stellar-cli@v23.0.1
+      - name: Setup Stellar + Rust
+        uses: ./.github/actions/setup-stellar
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Clippy (workspace-wide, all targets + all features)
+  # ─────────────────────────────────────────────────────────────────────────
+  contracts-clippy:
+    name: "clippy"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Stellar + Rust
+        uses: ./.github/actions/setup-stellar
+
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Run tests
-        run: cargo test
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Per-contract tests (matrix – one job per crate)
+  #
+  #    Tests run with --features testutils so the soroban mock environment
+  #    is available.  cargo-nextest gives per-test parallelism and cleaner
+  #    output; it falls back cleanly if the crate has no tests.
+  # ─────────────────────────────────────────────────────────────────────────
+  contracts-test:
+    name: "test / ${{ matrix.crate }}"
+    runs-on: ubuntu-latest
+    needs: [contracts-fmt, contracts-clippy]
 
-      - name: Build all Wasm artifacts
+    strategy:
+      fail-fast: false          # keep going so we see all failing crates
+      matrix:
+        crate:
+          - reward-pool
+          - badge-nft
+          - stake-vault
+          - quest-engine
+          - governance
+          - course-registry      # depends on badge-nft + reward-pool; last
+
+    defaults:
+      run:
+        working-directory: ./contracts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Stellar + Rust
+        uses: ./.github/actions/setup-stellar
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run tests for ${{ matrix.crate }}
+        run: >
+          cargo nextest run
+          --package ${{ matrix.crate }}
+          --features testutils
+          --no-fail-fast
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 4. WASM build + artifact upload
+  #    Runs in parallel with the test matrix; doesn't need test results.
+  # ─────────────────────────────────────────────────────────────────────────
+  contracts-build-wasm:
+    name: "build-wasm"
+    runs-on: ubuntu-latest
+    needs: [contracts-fmt, contracts-clippy]
+    defaults:
+      run:
+        working-directory: ./contracts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Stellar + Rust
+        uses: ./.github/actions/setup-stellar
+
+      - name: Build all WASM artifacts
         run: stellar contract build
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifacts
+          # stellar contract build writes to contracts/target/wasm32-unknown-unknown/release/
+          path: contracts/target/wasm32-unknown-unknown/release/*.wasm
+          retention-days: 14
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 5. Coverage (workspace-wide via cargo-llvm-cov)
+  #
+  #    Runs after all crates pass tests so coverage only executes on green
+  #    code.  Generates an lcov report (uploadable to Codecov) and a plain
+  #    text summary posted as a PR comment.
+  #
+  #    Threshold: COVERAGE_THRESHOLD % line coverage required.
+  # ─────────────────────────────────────────────────────────────────────────
+  contracts-coverage:
+    name: "coverage"
+    runs-on: ubuntu-latest
+    needs: [contracts-test]
+    # Coverage is informational on push; only fail the build on PRs so
+    # contributors get immediate feedback.
+    if: always() && (needs.contracts-test.result == 'success')
+
+    permissions:
+      pull-requests: write   # needed to post the comment
+
+    defaults:
+      run:
+        working-directory: ./contracts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Stellar + Rust
+        uses: ./.github/actions/setup-stellar
+        with:
+          # llvm-cov requires the llvm-tools component; include it via nightly
+          # so we always have it. stable ships llvm-tools too, but naming
+          # differs across hosts – nightly is more reliable for CI.
+          rust-toolchain: nightly
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Collect coverage (all crates, testutils features)
+        run: >
+          cargo llvm-cov nextest
+          --all
+          --features testutils
+          --lcov --output-path ../lcov.info
+          --summary-only
+          2>&1 | tee ../coverage-summary.txt
+
+      - name: Extract coverage percentage
+        id: cov
+        shell: bash
+        run: |
+          # cargo-llvm-cov summary line looks like:
+          #   TOTAL   <covered>  <total>  <pct>%
+          PCT=$(grep -E '^TOTAL' ../coverage-summary.txt | awk '{print $NF}' | tr -d '%')
+          echo "pct=${PCT}" >> "$GITHUB_OUTPUT"
+          echo "Coverage: ${PCT}%"
+
+      - name: Enforce coverage threshold
+        shell: bash
+        run: |
+          PCT=${{ steps.cov.outputs.pct }}
+          THRESHOLD=${{ env.COVERAGE_THRESHOLD }}
+          # Use awk for floating-point comparison (bash only does integers)
+          PASS=$(awk -v p="$PCT" -v t="$THRESHOLD" 'BEGIN { print (p+0 >= t+0) ? "yes" : "no" }')
+          if [[ "$PASS" != "yes" ]]; then
+            echo "::error::Coverage ${PCT}% is below the required threshold of ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "Coverage ${PCT}% meets threshold ${THRESHOLD}% ✓"
+
+      - name: Upload lcov report to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false   # don't fail if Codecov is unreachable
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Post coverage comment on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-report
+          message: |
+            ## 📊 Coverage Report
+
+            | Metric | Value |
+            |--------|-------|
+            | Line coverage | **${{ steps.cov.outputs.pct }}%** |
+            | Threshold | ${{ env.COVERAGE_THRESHOLD }}% |
+            | Status | ${{ steps.cov.outputs.pct >= env.COVERAGE_THRESHOLD && '✅ Pass' || '❌ Below threshold' }} |
+
+            <details>
+            <summary>Full summary</summary>
+
+            ```
+            $(cat ../coverage-summary.txt)
+            ```
+            </details>
+
+            *Generated by [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)*
