@@ -222,6 +222,81 @@ impl QuestEngineContract {
         quest_id
     }
 
+    /// Creates a Build Quest using SAC token allowance (employer pre-authorizes
+    /// the QuestEngine to pull funds, enabling multi-quest setup with a single
+    /// `approve` call).
+    ///
+    /// Unlike `create_build_quest`, this function uses
+    /// `token::Client::transfer_from` to pull from the employer's pre-authorized
+    /// allowance instead of requiring a simultaneous `transfer` signed by the
+    /// employer. This is ideal for employer integrations that batch quest
+    /// creation or want to decouple the funding approval from quest creation.
+    ///
+    /// # Prerequisites (off-chain / external)
+    /// The employer must call the SAC token's `approve` before invoking this
+    /// function:
+    /// ```text
+    /// token.approve(employer, quest_engine_contract, total_budget, expiration_ledger);
+    /// ```
+    /// Once the allowance is set, the employer can call this function one or
+    /// more times so long as the cumulative `reward_amount` stays within the
+    /// approved budget.
+    pub fn create_build_quest_allowance(
+        env: Env,
+        employer: Address,
+        reward_amount: i128,
+        metadata_hash: BytesN<32>,
+    ) -> u32 {
+        employer.require_auth();
+
+        let token_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+        let token_client = token::Client::new(&env, &token_address);
+
+        // Pull from employer's pre-authorized allowance into the QuestEngine.
+        token_client.transfer_from(
+            &env.current_contract_address(),
+            &employer,
+            &env.current_contract_address(),
+            &reward_amount,
+        );
+
+        // Increment Quest ID counter.
+        let mut quest_id: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::QuestCounter)
+            .unwrap_or(0);
+        quest_id += 1;
+        env.storage()
+            .instance()
+            .set(&DataKey::QuestCounter, &quest_id);
+
+        let quest = Quest {
+            employer: employer.clone(),
+            reward_amount,
+            quest_type: QuestType::Build,
+            metadata_hash,
+            active: true,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Quest(quest_id), &quest);
+
+        QuestCreated {
+            employer,
+            quest_id,
+            reward_amount,
+        }
+        .publish(&env);
+
+        quest_id
+    }
+
     /// Creates an Explore Quest that will be funded by the RewardPool.
     /// Explore Quests are for off-chain actions verified by the admin.
     ///
