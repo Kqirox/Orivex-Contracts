@@ -1014,7 +1014,7 @@ fn test_create_course_excessive_reward_panics() {
         &instructor,
         &3,
         &dummy_hash(&env),
-        &1_000_000_0000000i128, // exactly MAX — must be strictly less
+        &10_000_000_000_000i128, // exactly MAX — must be strictly less
     );
 }
 
@@ -1079,7 +1079,7 @@ fn test_set_course_reward_excessive_panics() {
     let (env, client) = setup();
     let (admin, _, id) = setup_with_course(&env, &client);
 
-    client.set_course_reward(&admin, &id, &1_000_000_0000000i128);
+    client.set_course_reward(&admin, &id, &10_000_000_000_000i128);
 }
 
 // ── get_course_reward ────────────────────────────────────────────────────────

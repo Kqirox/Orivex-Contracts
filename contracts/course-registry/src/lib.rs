@@ -12,7 +12,7 @@ pub const MAX_COURSE_ID: u32 = u32::MAX;
 pub const DEFAULT_TOTAL_MODULES_BOUND: u32 = 1000;
 
 pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
-pub const MAX_REWARD_AMOUNT: i128 = 1_000_000_0000000; // 1M USDC (7 decimals)
+pub const MAX_REWARD_AMOUNT: i128 = 10_000_000_000_000; // 1M USDC (7 decimals)
 pub const CONTRACT_VERSION: u32 = 1;
 // Crate overview — manages the lifecycle of on-chain courses,
 // their progress records, course completion mint of soulbound
