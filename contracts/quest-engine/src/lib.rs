@@ -241,7 +241,7 @@ impl QuestEngineContract {
     /// Once the allowance is set, the employer can call this function one or
     /// more times so long as the cumulative `reward_amount` stays within the
     /// approved budget.
-    pub fn create_build_quest_with_allowance(
+    pub fn create_build_quest_allowance(
         env: Env,
         employer: Address,
         reward_amount: i128,

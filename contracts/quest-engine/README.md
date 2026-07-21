@@ -7,7 +7,7 @@ Build quests (employer-funded, peer-reviewed) and Explore quests (admin-verified
 - `initialize(admin, token, reward_pool, stake_vault)` — one-time deploy-time setup.
 - `set_pause(admin, status)` — admin-only circuit breaker.
 - `create_build_quest(employer, reward_amount, metadata_hash)` — escrow (direct transfer).
-- `create_build_quest_with_allowance(employer, reward_amount, metadata_hash)` — escrow via SAC allowance (pull pattern).
+- `create_build_quest_allowance(employer, reward_amount, metadata_hash)` — escrow via SAC allowance (pull pattern).
 - `create_explore_quest(admin, reward_amount, metadata_hash)` — pool-backed.
 - `submit_proof(learner, quest_id, proof_hash)` — single per learner per quest.
 - `review_submission(employer, learner, quest_id, approve)` — single review with multiplier.
@@ -22,7 +22,7 @@ Build quests (employer-funded, peer-reviewed) and Explore quests (admin-verified
 The standard `create_build_quest` requires the employer to send both the token
 approval and the quest creation in a single transaction. For employers who want
 to batch-create quests or decouple funding from quest creation, use the SAC
-token allowance pattern with `create_build_quest_with_allowance`.
+token allowance pattern with `create_build_quest_allowance`.
 
 ### Flow
 
@@ -38,7 +38,7 @@ token allowance pattern with `create_build_quest_with_allowance`.
    );
    ```
 
-2. **Create quests** — Call `create_build_quest_with_allowance` one or more
+2. **Create quests** — Call `create_build_quest_allowance` one or more
    times. Each invocation pulls `reward_amount` from the pre-authorized
    allowance into the QuestEngine contract.
 
@@ -47,7 +47,7 @@ token allowance pattern with `create_build_quest_with_allowance`.
 
 ### Comparison
 
-| `create_build_quest` | `create_build_quest_with_allowance` |
+| `create_build_quest` | `create_build_quest_allowance` |
 |---|---|
 | Uses `token::transfer` (push) | Uses `token::transfer_from` (pull) |
 | One quest per transaction | Multi-quest with single approval |
