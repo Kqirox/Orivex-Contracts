@@ -52,3 +52,31 @@ jobs:
 
       - name: Build all Wasm artifacts
         run: stellar contract build
+
+      - name: Check Wasm sizes
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # Per-contract size thresholds in bytes (default: 50000 = ~49KB).
+          # Soroban protocol limit is 64KB; staying under 50KB leaves headroom.
+          declare -A THRESHOLDS=(
+            ["course_registry"]=50000
+            ["quest_engine"]=50000
+            ["reward_pool"]=50000
+            ["badge_nft"]=50000
+            ["governance"]=50000
+            ["stake_vault"]=50000
+          )
+          FAILED=0
+          for wasm in target/wasm32v1-none/release/*.wasm; do
+            size=$(stat -c%s "$wasm")
+            name=$(basename "$wasm" .wasm | tr '-' '_')
+            threshold=${THRESHOLDS[$name]:-50000}
+            if [ "$size" -ge "$threshold" ]; then
+              echo "::error file=$wasm::WASM size ($size bytes) exceeds threshold ($threshold bytes)"
+              FAILED=1
+            else
+              echo "OK: $wasm — $size / $threshold bytes"
+            fi
+          done
+          exit $FAILED

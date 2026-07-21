@@ -102,6 +102,12 @@ Emitted when a course status is updated.
 
 All functions that modify state (`create_course`, `set_course_status`) should enforce admin authentication at the invocation layer. In production deployments, the `admin.require_auth()` call should be uncommented to enforce authentication within the contract. For testing purposes, authentication is handled externally to allow proper unit testing.
 
+## Wasm Size Budget
+
+This contract must compile to ≤ 50 KB (enforced in CI).
+Soroban's protocol limit is 64 KB; staying under 50 KB preserves
+deploy-cost and gas headroom.
+
 ## Building
 
 ```bash

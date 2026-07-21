@@ -2,6 +2,12 @@
 
 Build quests (employer-funded, peer-reviewed) and Explore quests (admin-verified, pool-funded).
 
+## Wasm Size Budget
+
+This contract must compile to ≤ 50 KB (enforced in CI).
+Soroban's protocol limit is 64 KB; staying under 50 KB preserves
+deploy-cost and gas headroom.
+
 ## Functions
 
 - `initialize(admin, token, reward_pool, stake_vault)` — one-time deploy-time setup.
