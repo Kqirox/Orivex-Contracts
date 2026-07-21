@@ -28,7 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown, wasm32v1-none
+          targets: wasm32-unknown-unknown
 
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
@@ -37,7 +37,9 @@ jobs:
           workspaces: "./contracts"
 
       - name: Install Stellar CLI
-        uses: stellar/stellar-cli@v23.0.1
+        uses: taiki-e/install-action@v2
+        with:
+          tool: stellar-cli
 
       - name: Check formatting
         run: cargo fmt --all -- --check
