@@ -18,4 +18,6 @@ pub enum DataKey {
     Admin,
     BadgeNftAddress,
     RewardPoolAddress,
+    CourseReward(u32),
+    ContractVersion,
 }
