@@ -24,8 +24,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Pin to 1.84.0 — soroban-sdk 23's transitive deps (ethnum, ed25519-dalek)
+      # are incompatible with newer Rust versions. Remove when upgrading soroban-sdk.
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.84.0
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown, wasm32v1-none
