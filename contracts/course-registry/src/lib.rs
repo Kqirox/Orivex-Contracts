@@ -587,11 +587,7 @@ impl CourseRegistry {
             .persistent()
             .set(&DataKey::CourseReward(id), &new_reward);
 
-        CourseRewardUpdated {
-            id,
-            new_reward,
-        }
-        .publish(&env);
+        CourseRewardUpdated { id, new_reward }.publish(&env);
     }
 
     /// Returns the stored reward amount for a course. Returns 0 when no
