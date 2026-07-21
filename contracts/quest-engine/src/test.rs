@@ -59,6 +59,12 @@ fn mint_tokens(env: &Env, token_id: &Address, to: &Address, amount: &i128) {
     sac_client.mint(to, amount);
 }
 
+fn approve_allowance(env: &Env, token_id: &Address, from: &Address, spender: &Address, amount: &i128) {
+    let token_client = soroban_sdk::token::Client::new(env, token_id);
+    let expiration_ledger = env.ledger().sequence() + 10_000;
+    token_client.approve(from, spender, amount, &expiration_ledger);
+}
+
 fn token_balance(env: &Env, token_id: &Address, of: &Address) -> i128 {
     soroban_sdk::token::Client::new(env, token_id).balance(of)
 }
@@ -199,6 +205,151 @@ fn test_create_build_quest_multiple_employers() {
 
     // Total contract balance
     assert_eq!(token_balance(&env, &token_id, &client.address), 1200);
+}
+
+// ── create_build_quest_with_allowance Tests ──────────────────────────────────
+
+#[test]
+fn test_create_build_quest_with_allowance_success() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let reward_amount: i128 = 1_000;
+    let metadata_hash = BytesN::from_array(&env, &[70u8; 32]);
+
+    // Fund the employer
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    assert_eq!(token_balance(&env, &token_id, &employer), reward_amount);
+
+    // Employer pre-approves QuestEngine to spend reward_amount
+    approve_allowance(
+        &env,
+        &token_id,
+        &employer,
+        &client.address,
+        &reward_amount,
+    );
+
+    // Create a build quest via allowance
+    let quest_id =
+        client.create_build_quest_with_allowance(&employer, &reward_amount, &metadata_hash);
+
+    assert_eq!(quest_id, 1);
+
+    // Verify token balances: employer -> QuestEngine
+    assert_eq!(
+        token_balance(&env, &token_id, &client.address),
+        reward_amount
+    );
+    assert_eq!(token_balance(&env, &token_id, &employer), 0);
+
+    // Verify quest record
+    let quest = client.get_quest(&quest_id).unwrap();
+    assert_eq!(quest.employer, employer);
+    assert_eq!(quest.reward_amount, reward_amount);
+    assert_eq!(quest.quest_type, QuestType::Build);
+    assert!(quest.active);
+}
+
+#[test]
+fn test_create_build_quest_with_allowance_emits_event() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[71u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    approve_allowance(
+        &env,
+        &token_id,
+        &employer,
+        &client.address,
+        &reward_amount,
+    );
+
+    client.create_build_quest_with_allowance(&employer, &reward_amount, &metadata_hash);
+
+    let events = env.events().all();
+    assert!(
+        !events.is_empty(),
+        "Expected at least 1 event, got {}",
+        events.len()
+    );
+}
+
+#[test]
+fn test_create_build_quest_with_allowance_multi_quest() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let total_budget: i128 = 3_000;
+    let reward_amount: i128 = 1_000;
+    let metadata_hash = BytesN::from_array(&env, &[72u8; 32]);
+
+    // Fund employer and set single allowance covering all quests
+    mint_tokens(&env, &token_id, &employer, &total_budget);
+    approve_allowance(
+        &env,
+        &token_id,
+        &employer,
+        &client.address,
+        &total_budget,
+    );
+
+    // Create 3 quests using the single allowance
+    let id1 = client.create_build_quest_with_allowance(&employer, &reward_amount, &metadata_hash);
+    let id2 = client.create_build_quest_with_allowance(&employer, &reward_amount, &metadata_hash);
+    let id3 = client.create_build_quest_with_allowance(&employer, &reward_amount, &metadata_hash);
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+    assert_eq!(id3, 3);
+
+    // All quests exist and are Build type
+    for id in [id1, id2, id3] {
+        let quest = client.get_quest(&id).unwrap();
+        assert_eq!(quest.quest_type, QuestType::Build);
+        assert!(quest.active);
+    }
+
+    assert_eq!(token_balance(&env, &token_id, &client.address), total_budget);
+    assert_eq!(token_balance(&env, &token_id, &employer), 0);
+}
+
+#[test]
+#[should_panic(expected = "Not initialized")]
+fn test_create_build_quest_with_allowance_without_init_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let employer = Address::generate(&env);
+    let metadata_hash = BytesN::from_array(&env, &[73u8; 32]);
+    client.create_build_quest_with_allowance(&employer, &100, &metadata_hash);
+}
+
+#[test]
+#[should_panic]
+fn test_create_build_quest_with_allowance_insufficient_approval_panics() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let reward_amount: i128 = 1_000;
+    let metadata_hash = BytesN::from_array(&env, &[74u8; 32]);
+
+    // Fund employer with enough balance
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+
+    // But approve less than reward_amount
+    approve_allowance(
+        &env,
+        &token_id,
+        &employer,
+        &client.address,
+        &(reward_amount - 1),
+    );
+
+    // Should panic when transfer_from exceeds allowance
+    client.create_build_quest_with_allowance(&employer, &reward_amount, &metadata_hash);
 }
 
 // ── submit_proof Tests ───────────────────────────────────────────────────────
