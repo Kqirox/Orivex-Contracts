@@ -2,6 +2,12 @@
 
 Badge-weighted proposal lifecycle.
 
+## Wasm Size Budget
+
+This contract must compile to ≤ 50 KB (enforced in CI).
+Soroban's protocol limit is 64 KB; staying under 50 KB preserves
+deploy-cost and gas headroom.
+
 ## Functions
 
 - `initialize(admin, badge_contract)` — one-time deploy-time setup.
