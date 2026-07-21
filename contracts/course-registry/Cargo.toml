@@ -20,4 +20,5 @@ reward-pool = { path = "../reward-pool", default-features = false }
 soroban-sdk = { workspace = true, features = ["testutils"] }
 badge-nft = { path = "../badge-nft", features = ["testutils"] }
 reward-pool = { path = "../reward-pool", features = ["testutils"] }
+governance = { path = "../governance" }
 
