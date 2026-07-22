@@ -971,7 +971,6 @@ fn test_complete_course_triggers_reward_distribution() {
 
 /// Test 2 – Reward NOT distributed when CourseRegistry is not whitelisted.
 #[test]
-#[should_panic(expected = "Caller is not an authorized spender")]
 fn test_reward_not_distributed_without_whitelist() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -988,8 +987,19 @@ fn test_reward_not_distributed_without_whitelist() {
     // Set the RewardPool address WITHOUT calling add_approved_spender
     client.set_reward_pool_address(&admin, &reward_pool_client.address);
 
-    // Should panic: "Caller is not an authorized spender"
+    // Should NOT panic — graceful degradation: pending reward is recorded
     client.complete_module(&admin, &learner, &course_id);
+
+    // Verify pending reward was recorded (distribution silently failed)
+    let has_pending = env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .has(&crate::types::DataKey::PendingReward(
+                learner.clone(),
+                course_id,
+            ))
+    });
+    assert!(has_pending);
 }
 
 /// Test 3 – No reward distributed if RewardPool address was never set (graceful degradation).

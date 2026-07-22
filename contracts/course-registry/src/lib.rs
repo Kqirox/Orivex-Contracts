@@ -472,9 +472,13 @@ impl CourseRegistry {
                 badge_nft.mint_badge(&env.current_contract_address(), &learner, &id);
             }
 
-            // Attempt reward distribution; if it fails, the pending reward
-            // record allows the learner to retry via `claim_completion_reward`.
-            let _ = Self::try_distribute_reward(&env, &learner, id);
+            // Attempt reward distribution; if it succeeds, clear the pending reward.
+            // If it fails, the pending reward record allows the learner to retry.
+            if Self::try_distribute_reward(&env, &learner, id) {
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::PendingReward(learner.clone(), id));
+            }
         }
     }
 
