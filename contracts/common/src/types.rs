@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address};
+use soroban_sdk::contracttype;
 
 /// A soulbound badge representing course completion.
 /// Shared between `badge-nft` and `governance` contracts.

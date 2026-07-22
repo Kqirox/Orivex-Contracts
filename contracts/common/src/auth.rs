@@ -23,7 +23,7 @@ pub fn require_admin(env: &Env, caller: &Address, admin_key: &Symbol) {
         .storage()
         .instance()
         .get(admin_key)
-        .expect(ContractError::NotInitialized.msg());
+        .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized.msg()));
 
     assert!(
         caller == &stored_admin,
