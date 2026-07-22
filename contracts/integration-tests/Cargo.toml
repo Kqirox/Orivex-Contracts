@@ -10,7 +10,6 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-contracts-common = { path = "../common", default-features = false }
 course-registry = { path = "../course-registry", default-features = false }
 badge-nft = { path = "../badge-nft", default-features = false }
 reward-pool = { path = "../reward-pool", default-features = false }
@@ -20,7 +19,6 @@ governance = { path = "../governance", default-features = false }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-contracts-common = { path = "../common", features = ["testutils"] }
 course-registry = { path = "../course-registry", features = ["testutils"] }
 badge-nft = { path = "../badge-nft", features = ["testutils"] }
 reward-pool = { path = "../reward-pool", features = ["testutils"] }

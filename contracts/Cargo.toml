@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "common",
     "course-registry",
     "quest-engine",
     "reward-pool",
