@@ -98,6 +98,20 @@ pub struct ExploreQuestVerified {
     pub amount: i128,
 }
 
+#[contractevent]
+pub struct RewardPoolUpdated {
+    #[topic]
+    pub admin: Address,
+    pub new_address: Address,
+}
+
+#[contractevent]
+pub struct StakeVaultUpdated {
+    #[topic]
+    pub admin: Address,
+    pub new_address: Address,
+}
+
 #[contract]
 pub struct QuestEngineContract;
 
@@ -158,6 +172,54 @@ impl QuestEngineContract {
 
         // 4. Store pause status in Instance storage
         env.storage().instance().set(&DataKey::IsPaused, &status);
+    }
+
+    /// Updates the RewardPool address used for explore-quest payouts.
+    /// Admin-only. Emits `RewardPoolUpdated` with the new address.
+    pub fn set_reward_pool_address(env: Env, admin: Address, new_address: Address) {
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::RewardPool, &new_address);
+
+        RewardPoolUpdated {
+            admin,
+            new_address,
+        }
+        .publish(&env);
+    }
+
+    /// Updates the StakeVault address used for multiplier lookups.
+    /// Admin-only. Emits `StakeVaultUpdated` with the new address.
+    pub fn set_stake_vault_address(env: Env, admin: Address, new_address: Address) {
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::StakeVault, &new_address);
+
+        StakeVaultUpdated {
+            admin,
+            new_address,
+        }
+        .publish(&env);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
