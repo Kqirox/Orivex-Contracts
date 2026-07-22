@@ -414,7 +414,7 @@ impl CourseRegistry {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect(ContractError::NotInitialized.msg());
+            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized.msg()));
         assert!(
             verifier == stored_admin,
             "{}",
