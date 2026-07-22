@@ -22,6 +22,8 @@ pub mod types;
 
 pub use types::{DataKey, Proposal};
 
+use orivex_common::bump_persistent;
+
 const BADGE_NFT_KEY: Symbol = symbol_short!("badge");
 
 #[contracttype]
@@ -64,9 +66,6 @@ pub struct ContractUpgraded {
 impl Governance {
     /// Initializes the governance contract with the admin and BadgeNFT contract address.
     /// Must be called once upon deployment.
-    /// Bootstrap with admin and the BadgeNFT contract address used for
-    /// vote-weight computation. The `BADGE_NFT_KEY` symbol constant
-    /// names the instance slot.
     pub fn initialize(env: Env, admin: Address, badge_contract_address: Address) {
         if env.storage().instance().has(&BADGE_NFT_KEY) {
             panic!("Already initialized");
@@ -79,14 +78,16 @@ impl Governance {
     }
 
     /// Returns the proposal stored for the given proposal ID.
-    /// Reads a Proposal struct from persistent storage by ID. The
-    /// function panics with `"Proposal not found"` when no
-    /// matching `DataKey::Proposal(id)` exists.
+    /// Reads a Proposal struct from persistent storage by ID and bumps its TTL.
     pub fn get_proposal(env: Env, proposal_id: u32) -> Proposal {
-        env.storage()
+        let key = DataKey::Proposal(proposal_id);
+        let proposal: Proposal = env
+            .storage()
             .persistent()
-            .get(&DataKey::Proposal(proposal_id))
-            .expect("Proposal not found")
+            .get(&key)
+            .expect("Proposal not found");
+        bump_persistent(&env, &key);
+        proposal
     }
 
     /// Casts a vote on a proposal, weighted by the number of badges the voter owns.
@@ -108,7 +109,14 @@ impl Governance {
         let badge_client = BadgeNFTClient::new(&env, &badge_contract_address);
         let weight = badge_client.get_badges(&voter).len();
 
-        let mut proposal = Self::get_proposal(env.clone(), proposal_id);
+        let proposal_key = DataKey::Proposal(proposal_id);
+        let mut proposal: Proposal = env
+            .storage()
+            .persistent()
+            .get(&proposal_key)
+            .expect("Proposal not found");
+        bump_persistent(&env, &proposal_key);
+
         if support {
             proposal.votes_for = proposal
                 .votes_for
@@ -123,14 +131,14 @@ impl Governance {
 
         env.storage()
             .persistent()
-            .set(&DataKey::Proposal(proposal_id), &proposal);
+            .set(&proposal_key, &proposal);
+        bump_persistent(&env, &proposal_key);
+
         env.storage().persistent().set(&vote_key, &true);
+        bump_persistent(&env, &vote_key);
     }
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.
-    /// Replaces the Governance WASM with the supplied hash on the
-    /// Soroban host. Admin-only. Emits `ContractUpgraded` on
-    /// successful deployment.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
         admin.require_auth();
 
@@ -152,14 +160,18 @@ impl Governance {
     }
 
     /// Cancels an active proposal. Only callable by the proposer or the Protocol Admin.
-    /// Proposer- or admin-only cancellation of an active proposal.
     /// Sets `proposal.executed = true` (the canonical "locked"
-    /// state) and emits `ProposalCancelled`. Rejects cancel
-    /// attempts after voting ends or after execution.
+    /// state) and emits `ProposalCancelled`.
     pub fn cancel_proposal(env: Env, caller: Address, proposal_id: u32) {
         caller.require_auth();
 
-        let mut proposal = Self::get_proposal(env.clone(), proposal_id);
+        let proposal_key = DataKey::Proposal(proposal_id);
+        let mut proposal: Proposal = env
+            .storage()
+            .persistent()
+            .get(&proposal_key)
+            .expect("Proposal not found");
+        bump_persistent(&env, &proposal_key);
 
         let stored_admin: Address = env
             .storage()
@@ -177,7 +189,8 @@ impl Governance {
         proposal.executed = true;
         env.storage()
             .persistent()
-            .set(&DataKey::Proposal(proposal_id), &proposal);
+            .set(&proposal_key, &proposal);
+        bump_persistent(&env, &proposal_key);
 
         ProposalCancelled {
             proposal_id,
@@ -187,13 +200,16 @@ impl Governance {
     }
 
     /// Executes a proposal if it has passed and the voting period has ended.
-    /// Marks the proposal as executed so the admin knows to action the approved change.
     /// Marks a passed proposal as executed if voting is closed and
-    /// strictly more votes were cast in favor than against. Tied votes
-    /// panic with `"Proposal rejected"`. Re-execution panics with
-    /// `"Already executed"`.
+    /// strictly more votes were cast in favor than against.
     pub fn execute_proposal(env: Env, proposal_id: u32) {
-        let mut proposal = Self::get_proposal(env.clone(), proposal_id);
+        let proposal_key = DataKey::Proposal(proposal_id);
+        let mut proposal: Proposal = env
+            .storage()
+            .persistent()
+            .get(&proposal_key)
+            .expect("Proposal not found");
+        bump_persistent(&env, &proposal_key);
 
         assert!(
             env.ledger().timestamp() > proposal.end_time,
@@ -208,7 +224,8 @@ impl Governance {
         proposal.executed = true;
         env.storage()
             .persistent()
-            .set(&DataKey::Proposal(proposal_id), &proposal);
+            .set(&proposal_key, &proposal);
+        bump_persistent(&env, &proposal_key);
 
         ProposalExecuted {
             proposal_id,

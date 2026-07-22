@@ -1,0 +1,24 @@
+[package]
+name = "orivex-common"
+version = "0.1.0"
+edition = "2021"
+authors = ["Orivex Team"]
+description = "Shared TTL constants and storage helpers for the Orivex protocol"
+license = "MIT"
+repository = "https://github.com/Kqirox/orivex-contracts"
+
+[lib]
+crate-type = ["lib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+badge-nft      = { path = "../badge-nft",      features = ["testutils", "contract"] }
+course-registry = { path = "../course-registry" }
+governance     = { path = "../governance" }
+quest-engine   = { path = "../quest-engine" }
+reward-pool    = { path = "../reward-pool",    features = ["testutils", "contract"] }
+stake-vault    = { path = "../stake-vault" }

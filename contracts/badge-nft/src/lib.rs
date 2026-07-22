@@ -16,6 +16,8 @@ use soroban_sdk::{contractclient, contractevent, Address, Env, Vec};
 pub mod types;
 use types::Badge;
 
+use orivex_common::bump_persistent;
+
 // `#[contractclient]` generates `BadgeNFTClient` in every build (no wasm exports).
 // `#[contractimpl]` on the struct below generates the wasm exports, but only
 // when the `contract` feature is enabled — preventing duplicate symbols when
@@ -63,6 +65,7 @@ mod contract_impl {
 
     use crate::types::{Badge, DataKey};
     use crate::{BadgeMinted, BadgeRevoked, ContractUpgraded};
+    use orivex_common::bump_persistent;
 
     #[contract]
     pub struct BadgeNFT;
@@ -74,9 +77,6 @@ mod contract_impl {
         ///
         /// # Panics
         /// * If contract is already initialized
-        /// Bound-checked initializer used by CourseRegistry to deploy
-        /// this contract. Subsequent calls panic via the `Already initialized`
-        /// guard.
         pub fn initialize(env: Env, admin: Address) {
             if env.storage().instance().has(&DataKey::Admin) {
                 panic!("Already initialized");
@@ -91,10 +91,6 @@ mod contract_impl {
         /// * If caller authentication fails
         /// * If caller is not the authorized registry
         /// * If learner already has a badge for this course_id (duplicate minting)
-        /// Mint a soulbound Badge token for an authorized caller. The
-        /// function rejects duplicate (learner, course_id) pairs by walking
-        /// the learner's badge vector and panicking on match. This enforces
-        /// one-badge-per-course invariants.
         pub fn mint_badge(env: Env, caller: Address, learner: Address, course_id: u32) {
             caller.require_auth();
 
@@ -114,6 +110,9 @@ mod contract_impl {
                 .persistent()
                 .get(&badges_key)
                 .unwrap_or_else(|| Vec::new(&env));
+            // Bump after read (key may not exist yet on first mint — extend_ttl
+            // is a no-op for missing keys, so this is safe).
+            bump_persistent(&env, &badges_key);
 
             for existing_badge in badges.iter() {
                 if existing_badge.course_id == course_id {
@@ -128,6 +127,7 @@ mod contract_impl {
             };
             badges.push_back(new_badge);
             env.storage().persistent().set(&badges_key, &badges);
+            bump_persistent(&env, &badges_key);
 
             BadgeMinted {
                 learner,
@@ -140,17 +140,9 @@ mod contract_impl {
         /// Revokes a Soulbound Token (badge) from a learner's address.
         /// Only the official protocol registry can trigger this for fraud prevention.
         ///
-        /// # Arguments
-        /// * `admin` - The caller address (must be the authorized registry)
-        /// * `learner` - The learner address to revoke the badge from
-        /// * `course_id` - The course ID of the badge to revoke
-        ///
         /// # Panics
         /// * If caller authentication fails
         /// * If caller is not the authorized registry
-        /// Revoke a previously-minted badge by removing the matching entry
-        /// from the learner's `Badge` vector. If the badge is not present,
-        /// the function is a no-op (no event emitted, no panic).
         pub fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32) {
             // 1. admin.require_auth()
             admin.require_auth();
@@ -175,6 +167,7 @@ mod contract_impl {
                 .persistent()
                 .get(&badges_key)
                 .unwrap_or_else(|| Vec::new(&env));
+            bump_persistent(&env, &badges_key);
 
             // 5. Find the badge with course_id and remove it.
             let mut found = false;
@@ -190,6 +183,7 @@ mod contract_impl {
             if found {
                 badges.remove(index_to_remove);
                 env.storage().persistent().set(&badges_key, &badges);
+                bump_persistent(&env, &badges_key);
 
                 // 6. Emit BadgeRevoked event.
                 BadgeRevoked { learner, course_id }.publish(&env);
@@ -198,48 +192,27 @@ mod contract_impl {
 
         /// Returns all badges for a specific learner.
         ///
-        /// # Arguments
-        /// * `learner` - The learner address
-        ///
-        /// # Returns
-        /// Vector of Badge structs. Returns empty vector if learner has no badges.
-        /// Returns the entire badge vector for a learner. An empty
-        /// vector is returned when the learner has no badges so callers
-        /// can iterate safely without checking length.
+        /// Returns empty vector if learner has no badges.
         pub fn get_badges(env: Env, learner: Address) -> Vec<Badge> {
             let badges_key = DataKey::UserBadges(learner);
-            env.storage()
+            let badges: Vec<Badge> = env
+                .storage()
                 .persistent()
                 .get(&badges_key)
-                .unwrap_or_else(|| Vec::new(&env))
+                .unwrap_or_else(|| Vec::new(&env));
+            if env.storage().persistent().has(&badges_key) {
+                bump_persistent(&env, &badges_key);
+            }
+            badges
         }
 
         /// Returns the count of badges for a specific learner.
-        ///
-        /// # Arguments
-        /// * `learner` - The learner address
-        ///
-        /// # Returns
-        /// Number of badges the learner owns.
-        /// Returns `badges.len()` for a learner, computing the count
-        /// via the canonical `Vec::len` path. Equivalent to iterating
-        /// `get_badges` and counting, but cheaper for the hot path.
         pub fn get_badge_count(env: Env, learner: Address) -> u32 {
             let badges = Self::get_badges(env, learner);
             badges.len()
         }
 
         /// Checks if a learner has a specific badge.
-        ///
-        /// # Arguments
-        /// * `learner` - The learner address
-        /// * `course_id` - The course ID to check
-        ///
-        /// # Returns
-        /// true if the learner has the badge, false otherwise.
-        /// Returns true when the learner already holds a badge for the
-        /// given `course_id`. The check is a linear scan over the
-        /// learner's badge vector; bounded by `MAX_BADGES_PER_LEARNER`.
         pub fn has_badge(env: Env, learner: Address, course_id: u32) -> bool {
             let badges = Self::get_badges(env, learner);
             for badge in badges.iter() {
@@ -251,9 +224,6 @@ mod contract_impl {
         }
 
         /// Upgrades the contract WASM. Only callable by the Protocol Admin.
-        /// Replaces the BadgeNFT WASM with the supplied hash on the
-        /// Soroban host. Admin-only. Emits `ContractUpgraded` on
-        /// success; panics with `"Unauthorized"` for non-admins.
         pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
             admin.require_auth();
 
