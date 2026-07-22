@@ -447,12 +447,10 @@ impl CourseRegistry {
         let course_completed = new_progress == course.total_modules;
 
         // Record pending reward if course is completed and RewardPool is configured
-        if course_completed {
-            if env.storage().instance().has(&DataKey::RewardPoolAddress) {
-                env.storage()
-                    .persistent()
-                    .set(&DataKey::PendingReward(learner.clone(), id), &true);
-            }
+        if course_completed && env.storage().instance().has(&DataKey::RewardPoolAddress) {
+            env.storage()
+                .persistent()
+                .set(&DataKey::PendingReward(learner.clone(), id), &true);
         }
 
         // ── INTERACTIONS ────────────────────────────────────────────────
