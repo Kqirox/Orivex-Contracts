@@ -1113,7 +1113,7 @@ fn test_review_submission_multiplier_120_capped_emits_event() {
     let mut found_payout_computed = false;
     for i in 0..events.len() {
         let event = events.get(i).unwrap();
-        if event.contract_id == client.address {
+        if event.0 == client.address {
             found_payout_computed = true;
             break;
         }
