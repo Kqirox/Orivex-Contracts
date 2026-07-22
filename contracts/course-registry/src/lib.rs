@@ -416,7 +416,7 @@ impl CourseRegistry {
             .get(&DataKey::Admin)
             .expect(ContractError::NotInitialized.msg());
         assert!(
-            admin == stored_admin,
+            verifier == stored_admin,
             "{}",
             ContractError::Unauthorized.msg()
         );
