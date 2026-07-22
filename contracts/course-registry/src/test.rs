@@ -75,7 +75,7 @@ fn test_zero_modules_panics() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_unauthorized_admin_panics() {
     let (env, client) = setup();
     let true_admin = Address::generate(&env);
@@ -396,7 +396,7 @@ fn test_set_course_status_success() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_set_course_status_unauthorized_admin_panics() {
     let (env, client) = setup();
     let (_, _, id) = setup_with_course(&env, &client);
@@ -484,7 +484,7 @@ fn test_complete_module_exceeds_total_modules() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_complete_module_unauthorized_verifier() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -680,7 +680,7 @@ fn test_complete_module_without_badge_nft_configured_does_not_panic() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_set_badge_nft_address_unauthorized_panics() {
     let (env, client) = setup();
     let admin = Address::generate(&env);

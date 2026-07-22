@@ -117,7 +117,7 @@ fn test_add_approved_spender_not_initialized() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_add_approved_spender_wrong_admin() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -489,7 +489,7 @@ fn test_emergency_sweep_not_initialized() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_emergency_sweep_wrong_admin() {
     let (env, client) = setup();
     let admin = Address::generate(&env);

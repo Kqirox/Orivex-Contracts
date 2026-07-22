@@ -17,6 +17,7 @@ use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contracttype, symbol_short, Address,
     BytesN, Env, Symbol, Vec,
 };
+use contracts_common::require_admin;
 
 pub mod types;
 
@@ -132,14 +133,12 @@ impl Governance {
     /// Soroban host. Admin-only. Emits `ContractUpgraded` on
     /// successful deployment.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-        assert!(admin == stored_admin, "Unauthorized");
+        require_admin(&env, &admin, &stored_admin);
 
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
