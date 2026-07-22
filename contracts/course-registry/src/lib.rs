@@ -90,13 +90,14 @@ impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
     /// Sets the single Protocol Admin in instance storage at deploy time.
     /// Idempotent guards prevent re-initialization: the function panics if
-    /// `DataKey::Admin` is already present. No auth check is performed
-    /// here on purpose — `initialize` is intended to be called only once
-    /// by the deployer.
+    /// `DataKey::Admin` is already present. The caller must authenticate
+    /// (`admin.require_auth()`) to bind the transaction signature to the
+    /// supplied address, preventing front-runner attacks.
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("Already initialized");
         }
+        admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
     }
 
