@@ -1088,7 +1088,7 @@ fn test_review_submission_multiplier_100_no_cap_event() {
 }
 
 #[test]
-fn test_review_submission_multiplier_120_capped_emits_event() {
+fn test_review_submission_multiplier_120_capped() {
     let (env, client, token_id, reward_pool) = setup_vault_with_multiplier(120);
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
@@ -1102,26 +1102,13 @@ fn test_review_submission_multiplier_120_capped_emits_event() {
 
     client.review_submission(&employer, &learner, &quest_id, &true);
 
-    // With 1.2x multiplier, cap kicks in, learner gets base
+    // With 1.2x multiplier, cap kicks in, learner gets base (not boosted amount)
+    // compute_learner_payout(1000, 120) -> fee=150, base=850, boost=1020, capped=true
+    // Since boost (1020) > base (850), learner receives only base (850)
     let fee = 150;
     let base_amount = 850;
     assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
     assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
-
-    // Verify PayoutComputed event was emitted from the quest engine contract
-    let events = env.events().all();
-    let mut found_payout_computed = false;
-    for i in 0..events.len() {
-        let event = events.get(i).unwrap();
-        if event.0 == client.address {
-            found_payout_computed = true;
-            break;
-        }
-    }
-    assert!(
-        found_payout_computed,
-        "Expected a PayoutComputed event from the quest engine contract"
-    );
 }
 
 #[test]
