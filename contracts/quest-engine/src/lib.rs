@@ -17,7 +17,8 @@ pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 // admin-verified and rewarded out of the RewardPool.
 
 pub mod types;
-use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
+pub use types::QuestType;
+use types::{DataKey, Quest, Submission, SubmissionStatus};
 
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,

@@ -11,6 +11,11 @@ repository = "https://github.com/Kqirox/orivex-contracts"
 crate-type = ["lib", "cdylib"]
 doctest = false
 
+[features]
+default = ["contract"]
+contract = []
+testutils = ["soroban-sdk/testutils", "badge-nft/testutils", "reward-pool/testutils"]
+
 [dependencies]
 soroban-sdk = { workspace = true }
 contracts-common = { path = "../common", default-features = false }

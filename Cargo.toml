@@ -7,6 +7,7 @@ members = [
     "contracts/badge-nft",
     "contracts/governance",
     "contracts/stake-vault",
+    "contracts/integration-tests",
 ]
 resolver = "2"
 

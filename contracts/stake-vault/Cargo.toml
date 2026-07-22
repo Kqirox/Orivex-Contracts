@@ -11,6 +11,11 @@ repository = "https://github.com/Kqirox/orivex-contracts"
 crate-type = ["lib", "cdylib"]
 doctest = false
 
+[features]
+default = ["contract"]
+contract = []
+testutils = ["soroban-sdk/testutils"]
+
 [dependencies]
 soroban-sdk = { workspace = true }
 
