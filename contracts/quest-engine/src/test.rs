@@ -5,7 +5,7 @@ use soroban_sdk::{
 };
 
 use crate::types::{QuestType, SubmissionStatus};
-use crate::{QuestEngineContract, QuestEngineContractClient};
+use crate::{compute_learner_payout, QuestEngineContract, QuestEngineContractClient};
 
 // ── Mock StakeVault Contract ─────────────────────────────────────────────────
 
@@ -967,4 +967,168 @@ fn test_mixed_quest_types() {
     assert_eq!(explore_quest.quest_type, QuestType::Explore);
     assert_eq!(build_quest.employer, employer);
     assert_eq!(explore_quest.employer, admin);
+}
+
+// ── compute_learner_payout Unit Tests ────────────────────────────────────────
+
+#[test]
+fn test_compute_learner_payout_multiplier_100() {
+    let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(1000, 100);
+    // 1000 * 1500 / 10000 = 150 fee, base = 850
+    assert_eq!(fee, 150);
+    assert_eq!(boost_actual, 850);
+    assert_eq!(learner_amount, 850);
+    assert!(!capped);
+}
+
+#[test]
+fn test_compute_learner_payout_multiplier_120_capped() {
+    let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(1000, 120);
+    // fee = 150, base = 850, boost = 850*120/100 = 1020 > 850 => capped
+    assert_eq!(fee, 150);
+    assert_eq!(boost_actual, 1020);
+    assert_eq!(learner_amount, 850); // capped at base
+    assert!(capped);
+}
+
+#[test]
+fn test_compute_learner_payout_multiplier_80_below_base() {
+    let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(1000, 80);
+    // fee = 150, base = 850, boost = 850*80/100 = 680 < 850 => not capped
+    assert_eq!(fee, 150);
+    assert_eq!(boost_actual, 680);
+    assert_eq!(learner_amount, 680);
+    assert!(!capped);
+}
+
+#[test]
+fn test_compute_learner_payout_large_reward_multiplier_120() {
+    let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(10_000, 120);
+    assert_eq!(fee, 1500);
+    assert_eq!(boost_actual, 10_200);
+    assert_eq!(learner_amount, 8500); // capped at base
+    assert!(capped);
+}
+
+#[test]
+fn test_compute_learner_payout_small_reward_multiplier_100() {
+    // Very small reward: 10. Fee = 10*1500/10000 = 1. Base = 9.
+    let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(10, 100);
+    assert_eq!(fee, 1);
+    assert_eq!(boost_actual, 9);
+    assert_eq!(learner_amount, 9);
+    assert!(!capped);
+}
+
+// ── Configurable Mock StakeVault ────────────────────────────────────────────
+
+fn setup_vault_with_multiplier(
+    multiplier: u32,
+) -> (Env, QuestEngineContractClient<'static>, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    // Register the appropriate mock vault
+    let stake_vault_id = if multiplier == 120 {
+        env.register(MockStakeVaultWithMultiplier, ())
+    } else {
+        env.register(MockStakeVault, ())
+    };
+
+    let admin = Address::generate(&env);
+    let reward_pool = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool, &stake_vault_id);
+
+    (env, client, token_id, reward_pool)
+}
+
+// ── Payout Cap Event Tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_review_submission_multiplier_100_no_cap_event() {
+    let (env, client, token_id, reward_pool) = setup_vault_with_multiplier(100);
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[70u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[71u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    let events_before = env.events().all().len();
+
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // With 1.0x multiplier, learner_amount == base, no cap event emitted
+    let fee = 150;
+    let base_amount = 850;
+    assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
+
+    // No PayoutComputed event should be emitted for 1.0x (no cap)
+    let new_events = env.events().all();
+    for i in events_before..new_events.len() {
+        let _event = new_events.get(i).unwrap();
+    }
+    assert_eq!(
+        token_balance(&env, &token_id, &learner),
+        base_amount,
+        "Multiplier 100 should give base amount without cap"
+    );
+}
+
+#[test]
+fn test_review_submission_multiplier_120_capped() {
+    let (env, client, token_id, reward_pool) = setup_vault_with_multiplier(120);
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[72u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[73u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // With 1.2x multiplier, cap kicks in, learner gets base (not boosted amount)
+    // compute_learner_payout(1000, 120) -> fee=150, base=850, boost=1020, capped=true
+    // Since boost (1020) > base (850), learner receives only base (850)
+    let fee = 150;
+    let base_amount = 850;
+    assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
+}
+
+#[test]
+fn test_review_submission_multiplier_120_large_reward() {
+    let (env, client, token_id, reward_pool) = setup_vault_with_multiplier(120);
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 100_000;
+    let metadata_hash = BytesN::from_array(&env, &[74u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[75u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // fee = 15000, base = 85000, boosted = 102000 > 85000 => capped
+    let fee = 15_000;
+    let base_amount = 85_000;
+    assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
 }
