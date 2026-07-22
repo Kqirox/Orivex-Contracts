@@ -164,9 +164,9 @@ fn test_full_learner_journey_e2e() {
     assert!(badge_nft.has_badge(&learner, &course_id));
     assert_eq!(badge_nft.get_badge_count(&learner), 1);
 
-    // Reward should be distributed (10 USDC)
+    // Reward should be distributed (10 USDC = 100_000_000 with 7 decimals)
     let token_sac = token::StellarAssetClient::new(&env, &_token_address);
-    assert_eq!(token_sac.balance(&learner), 10_000_000);
+    assert_eq!(token_sac.balance(&learner), 100_000_000);
 
     // 5. Verify course is finished
     assert!(course_registry.is_course_finished(&learner, &course_id));
@@ -251,17 +251,14 @@ fn test_explore_quest_payout_drains_reward_pool_correctly() {
     // 1. Admin creates an Explore quest (explore quests are admin-only)
     let quest_id = quest_engine.create_explore_quest(&admin, &quest_reward, &dummy_hash(&env));
 
-    // 2. Learner submits proof
-    quest_engine.submit_proof(&learner, &quest_id, &dummy_hash(&env));
-
-    // 3. Admin verifies the explore quest (triggers payout from RewardPool)
+    // 2. Admin verifies the explore quest directly (Explore quests do not use submit_proof)
     quest_engine.verify_explore_quest(&admin, &learner, &quest_id);
 
-    // 4. Verify learner received the reward
+    // 3. Verify learner received the reward
     let token_sac = token::StellarAssetClient::new(&env, &_token_address);
     assert_eq!(token_sac.balance(&learner), quest_reward);
 
-    // 5. Verify reward pool balance decreased
+    // 4. Verify reward pool balance decreased
     assert_eq!(
         token_sac.balance(&reward_pool.address),
         1_000_000_000 - quest_reward
@@ -354,12 +351,12 @@ fn test_multiple_learners_independent_rewards() {
 
     // Both should have received rewards
     let token_sac = token::StellarAssetClient::new(&env, &_token_address);
-    assert_eq!(token_sac.balance(&learner_a), 10_000_000);
-    assert_eq!(token_sac.balance(&learner_b), 10_000_000);
+    assert_eq!(token_sac.balance(&learner_a), 100_000_000);
+    assert_eq!(token_sac.balance(&learner_b), 100_000_000);
 
-    // Reward pool should have decreased by 20 USDC
+    // Reward pool should have decreased by 20 USDC (2 × 100_000_000)
     assert_eq!(
         token_sac.balance(&_reward_pool.address),
-        1_000_000_000 - 2 * 10_000_000
+        1_000_000_000 - 2 * 100_000_000
     );
 }
