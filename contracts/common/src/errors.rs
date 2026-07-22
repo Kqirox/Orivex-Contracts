@@ -23,3 +23,18 @@ pub enum ContractError {
     /// The requested resource already exists.
     AlreadyExists = 8,
 }
+
+impl ContractError {
+    pub fn msg(&self) -> &'static str {
+        match self {
+            ContractError::AlreadyInitialized => "AlreadyInitialized",
+            ContractError::NotInitialized => "NotInitialized",
+            ContractError::Unauthorized => "Unauthorized",
+            ContractError::ContractPaused => "ContractPaused",
+            ContractError::NotFound => "NotFound",
+            ContractError::InvalidAmount => "InvalidAmount",
+            ContractError::AlreadyCompleted => "AlreadyCompleted",
+            ContractError::AlreadyExists => "AlreadyExists",
+        }
+    }
+}
