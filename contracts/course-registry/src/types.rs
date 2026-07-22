@@ -18,4 +18,8 @@ pub enum DataKey {
     Admin,
     BadgeNftAddress,
     RewardPoolAddress,
+    /// Tracks a pending reward for a learner who completed a course but
+    /// whose reward payout failed. The learner can call
+    /// `claim_completion_reward` to retry.
+    PendingReward(Address, u32),
 }

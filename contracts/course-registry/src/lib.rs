@@ -402,13 +402,15 @@ impl CourseRegistry {
     /// Only callable by the authorized verifier (protocol admin).
     /// Records a verifier-confirmed module completion and emits the
     /// `ModuleCompleted` event. On the final module, this function
-    /// additionally cross-calls the BadgeNFT (mint soulbound badge) and
-    /// the RewardPool (USDC payout) when those addresses are wired.
+    /// additionally mints the soulbound badge and records a pending reward.
+    ///
+    /// Follows the checks-effects-interactions pattern: all state mutations
+    /// happen before cross-contract calls. If the reward payout fails, the
+    /// learner can retry via `claim_completion_reward`.
     pub fn complete_module(env: Env, verifier: Address, learner: Address, id: u32) {
-        // 1. Authenticate the verifier's signature
+        // ── CHECKS ──────────────────────────────────────────────────────
         verifier.require_auth();
 
-        // 2. Verify the verifier is the authorized protocol admin
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -419,35 +421,40 @@ impl CourseRegistry {
             "Unauthorized: Caller is not the protocol admin"
         );
 
-        // 3. Retrieve the course to validate it exists and get total_modules
         let course: Course = env
             .storage()
             .persistent()
             .get(&DataKey::Course(id))
             .expect("Course not found");
 
-        // 4. Retrieve current progress (defaults to 0 if not set)
         let current_progress: u32 = env
             .storage()
             .persistent()
             .get(&DataKey::Progress(learner.clone(), id))
             .unwrap_or(0);
 
-        // 5. Assert current progress is less than total_modules
         assert!(
             current_progress < course.total_modules,
             "Course already completed"
         );
 
-        // 6. Increment progress by 1
+        // ── EFFECTS ─────────────────────────────────────────────────────
         let new_progress = current_progress + 1;
 
-        // 7. Save new progress to persistent storage
         env.storage()
             .persistent()
             .set(&DataKey::Progress(learner.clone(), id), &new_progress);
 
-        // 8. Emit ModuleCompleted event
+        let course_completed = new_progress == course.total_modules;
+
+        // Record pending reward if course is completed and RewardPool is configured
+        if course_completed && env.storage().instance().has(&DataKey::RewardPoolAddress) {
+            env.storage()
+                .persistent()
+                .set(&DataKey::PendingReward(learner.clone(), id), &true);
+        }
+
+        // ── INTERACTIONS ────────────────────────────────────────────────
         ModuleCompleted {
             learner: learner.clone(),
             course_id: id,
@@ -455,8 +462,8 @@ impl CourseRegistry {
         }
         .publish(&env);
 
-        // 9. If the learner just finished the final module, mint their soulbound badge
-        if new_progress == course.total_modules {
+        if course_completed {
+            // Mint soulbound badge
             if let Some(badge_nft_address) = env
                 .storage()
                 .instance()
@@ -466,27 +473,74 @@ impl CourseRegistry {
                 badge_nft.mint_badge(&env.current_contract_address(), &learner, &id);
             }
 
-            // 10. Trigger reward distribution if RewardPool address is configured
-            if let Some(reward_pool_address) = env
-                .storage()
-                .instance()
-                .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
-            {
-                let reward_pool = RewardPoolClient::new(&env, &reward_pool_address);
-                let base_reward: i128 = 10_0000000; // 10 USDC (7 decimal places)
-                reward_pool.distribute_reward(
-                    &env.current_contract_address(),
-                    &learner,
-                    &base_reward,
-                );
+            // Attempt reward distribution; if it succeeds, clear the pending reward.
+            // If it fails, the pending reward record allows the learner to retry.
+            if Self::try_distribute_reward(&env, &learner, id) {
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::PendingReward(learner.clone(), id));
+            }
+        }
+    }
 
+    /// Allows a learner to claim a pending course completion reward that
+    /// was not distributed during `complete_module` (e.g. due to a
+    /// transient RewardPool failure).
+    ///
+    /// Only succeeds if:
+    /// - The learner has a pending reward record
+    /// - The reward has not already been claimed
+    pub fn claim_completion_reward(env: Env, learner: Address, course_id: u32) {
+        learner.require_auth();
+
+        let pending_key = DataKey::PendingReward(learner.clone(), course_id);
+        assert!(
+            env.storage().persistent().has(&pending_key),
+            "No pending reward for this learner and course"
+        );
+
+        // Remove the pending reward record to prevent double-claiming
+        env.storage().persistent().remove(&pending_key);
+
+        // Distribute the reward
+        Self::try_distribute_reward(&env, &learner, course_id);
+    }
+
+    /// Attempts to distribute the course completion reward. Returns true if
+    /// the reward was successfully distributed, false if the RewardPool is
+    /// not configured or the transfer failed.
+    ///
+    /// This is a best-effort attempt — it does not panic on failure, allowing
+    /// the caller to handle the failure gracefully (e.g. by recording a
+    /// pending reward).
+    fn try_distribute_reward(env: &Env, learner: &Address, course_id: u32) -> bool {
+        let reward_pool_address: Address = match env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
+        {
+            Some(addr) => addr,
+            None => return false,
+        };
+
+        let reward_pool = RewardPoolClient::new(env, &reward_pool_address);
+        let base_reward: i128 = 10_0000000; // 10 USDC (7 decimal places)
+
+        match reward_pool.try_distribute_reward(
+            &env.current_contract_address(),
+            learner,
+            &base_reward,
+        ) {
+            Ok(_) => {
                 CourseCompleted {
                     learner: learner.clone(),
-                    course_id: id,
+                    course_id,
                     reward_amount: base_reward,
                 }
-                .publish(&env);
+                .publish(env);
+                true
             }
+            Err(_) => false,
         }
     }
 

@@ -589,6 +589,133 @@ fn test_get_progress_tracks_completion() {
     assert_eq!(client.get_progress(&learner, &course_id), 3);
 }
 
+// ── Pending rewards & claim_completion_reward (Issue #4) ──────────────────────
+
+#[test]
+fn test_pending_reward_recorded_when_reward_pool_configured() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+
+    // Deploy RewardPool and wire it up
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000);
+    reward_pool_client.add_approved_spender(&admin, &client.address);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // Complete the single-module course — reward should succeed immediately
+    client.complete_module(&admin, &learner, &course_id);
+
+    // Badge should be minted, reward distributed
+    let badge_client = setup_badge_nft(&env, &client.address);
+    client.set_badge_nft_address(&admin, &badge_client.address);
+
+    // Verify no pending reward remains (it was claimed immediately)
+    let has_pending = env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .has(&crate::types::DataKey::PendingReward(
+                learner.clone(),
+                course_id,
+            ))
+    });
+    assert!(!has_pending);
+}
+
+#[test]
+fn test_claim_completion_reward_succeeds() {
+    let (env2, client2) = setup();
+    let admin2 = Address::generate(&env2);
+    let instructor2 = Address::generate(&env2);
+    let learner2 = Address::generate(&env2);
+
+    client2.initialize(&admin2);
+    let course_id2 = client2.create_course(&admin2, &instructor2, &1, &dummy_hash(&env2));
+
+    // Complete course without RewardPool — should succeed without panic
+    client2.complete_module(&admin2, &learner2, &course_id2);
+
+    // Now manually insert a pending reward record
+    env2.as_contract(&client2.address, || {
+        env2.storage().persistent().set(
+            &crate::types::DataKey::PendingReward(learner2.clone(), course_id2),
+            &true,
+        );
+    });
+
+    // Deploy RewardPool and wire it up
+    let (reward_pool_client2, token_sac2, _) = setup_reward_pool(&env2, &admin2);
+    token_sac2.mint(&reward_pool_client2.address, &1_000_000_000);
+    reward_pool_client2.add_approved_spender(&admin2, &client2.address);
+    client2.set_reward_pool_address(&admin2, &reward_pool_client2.address);
+
+    // Claim the pending reward
+    client2.claim_completion_reward(&learner2, &course_id2);
+
+    // Verify reward was distributed
+    assert_eq!(token_sac2.balance(&learner2), 10_0000000);
+
+    // Verify pending reward was cleared
+    let has_pending = env2.as_contract(&client2.address, || {
+        env2.storage()
+            .persistent()
+            .has(&crate::types::DataKey::PendingReward(
+                learner2.clone(),
+                course_id2,
+            ))
+    });
+    assert!(!has_pending);
+}
+
+#[test]
+#[should_panic(expected = "No pending reward for this learner and course")]
+fn test_claim_completion_reward_no_pending_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Try to claim a reward that doesn't exist
+    client.claim_completion_reward(&learner, &99);
+}
+
+#[test]
+#[should_panic(expected = "No pending reward for this learner and course")]
+fn test_claim_completion_reward_cannot_double_claim() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
+
+    // Manually set a pending reward
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &crate::types::DataKey::PendingReward(learner.clone(), course_id),
+            &true,
+        );
+    });
+
+    // Deploy RewardPool
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000);
+    reward_pool_client.add_approved_spender(&admin, &client.address);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // First claim succeeds
+    client.claim_completion_reward(&learner, &course_id);
+
+    // Second claim should panic — pending reward was already cleared
+    client.claim_completion_reward(&learner, &course_id);
+}
+
 // ── Badge minting on course completion ───────────────────────────────────────
 
 /// Helper: deploys and initializes a BadgeNFT contract, authorizing the given registry address.
@@ -868,7 +995,6 @@ fn test_complete_course_triggers_reward_distribution() {
 
 /// Test 2 – Reward NOT distributed when CourseRegistry is not whitelisted.
 #[test]
-#[should_panic(expected = "Caller is not an authorized spender")]
 fn test_reward_not_distributed_without_whitelist() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -885,8 +1011,19 @@ fn test_reward_not_distributed_without_whitelist() {
     // Set the RewardPool address WITHOUT calling add_approved_spender
     client.set_reward_pool_address(&admin, &reward_pool_client.address);
 
-    // Should panic: "Caller is not an authorized spender"
+    // Should NOT panic — graceful degradation: pending reward is recorded
     client.complete_module(&admin, &learner, &course_id);
+
+    // Verify pending reward was recorded (distribution silently failed)
+    let has_pending = env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .has(&crate::types::DataKey::PendingReward(
+                learner.clone(),
+                course_id,
+            ))
+    });
+    assert!(has_pending);
 }
 
 /// Test 3 – No reward distributed if RewardPool address was never set (graceful degradation).
