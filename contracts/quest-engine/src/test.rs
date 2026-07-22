@@ -1109,7 +1109,10 @@ fn test_review_submission_multiplier_120_capped_emits_event() {
     assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
 
     // Verify events were emitted
-    assert!(!env.events().all().is_empty(), "Expected at least one event");
+    assert!(
+        !env.events().all().is_empty(),
+        "Expected at least one event"
+    );
 }
 
 #[test]
