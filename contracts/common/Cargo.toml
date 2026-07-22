@@ -1,0 +1,11 @@
+[package]
+name = "contracts-common"
+version = "0.1.0"
+edition = "2021"
+description = "Shared types, errors, constants, and auth helpers for Orivex contracts"
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

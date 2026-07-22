@@ -1,11 +1,12 @@
 [workspace]
 members = [
-    "course-registry",
-    "quest-engine",
-    "reward-pool",
-    "badge-nft",
-    "governance",
-    "stake-vault",
+    "contracts/common",
+    "contracts/course-registry",
+    "contracts/quest-engine",
+    "contracts/reward-pool",
+    "contracts/badge-nft",
+    "contracts/governance",
+    "contracts/stake-vault",
 ]
 resolver = "2"
 

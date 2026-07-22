@@ -1,5 +1,7 @@
 #![no_std]
 
+use contracts_common::errors::ContractError;
+
 pub const INITIAL_COURSE_ID: u32 = 1;
 
 pub const MAX_COURSE_ID: u32 = u32::MAX;
@@ -95,7 +97,7 @@ impl CourseRegistry {
     /// supplied address, preventing front-runner attacks.
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("Already initialized");
+            panic!("{}", ContractError::AlreadyInitialized.msg());
         }
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
@@ -415,7 +417,7 @@ impl CourseRegistry {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("Contract not initialized");
+            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized.msg()));
         assert!(
             verifier == stored_admin,
             "Unauthorized: Caller is not the protocol admin"
