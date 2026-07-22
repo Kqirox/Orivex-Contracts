@@ -15,8 +15,8 @@ use course_registry::{CourseRegistry, CourseRegistryClient};
 use governance::{Governance, GovernanceClient};
 use quest_engine::{QuestEngineContract, QuestEngineContractClient};
 use reward_pool::{RewardPool, RewardPoolClient};
-use stake_vault::{StakeVault, StakeVaultClient};
 use soroban_sdk::token;
+use stake_vault::{StakeVault, StakeVaultClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
