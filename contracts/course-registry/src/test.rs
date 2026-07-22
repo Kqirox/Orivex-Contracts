@@ -604,28 +604,6 @@ fn test_pending_reward_recorded_when_reward_pool_configured() {
 
 #[test]
 fn test_claim_completion_reward_succeeds() {
-    let (env, client) = setup();
-    let admin = Address::generate(&env);
-    let instructor = Address::generate(&env);
-    let learner = Address::generate(&env);
-
-    client.initialize(&admin);
-    let course_id = client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
-
-    // Deploy RewardPool and fund it, but do NOT whitelist CourseRegistry
-    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
-    token_sac.mint(&reward_pool_client.address, &1_000_000_000);
-    // Deliberately NOT calling add_approved_spender
-
-    client.set_reward_pool_address(&admin, &reward_pool_client.address);
-
-    // complete_module will fail to distribute reward, creating a pending reward
-    // We need to handle the panic — the distribute_reward call will panic
-    // because the caller is not authorized. Let's use a different approach:
-    // manually set the pending reward and test claim_completion_reward
-
-    // First, complete the course without RewardPool configured
-    // Reset: create a fresh setup
     let (env2, client2) = setup();
     let admin2 = Address::generate(&env2);
     let instructor2 = Address::generate(&env2);
