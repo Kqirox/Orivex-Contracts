@@ -18,6 +18,7 @@ testutils = ["soroban-sdk/testutils", "badge-nft/testutils", "reward-pool/testut
 
 [dependencies]
 soroban-sdk = { workspace = true }
+contracts-common = { path = "../common", default-features = false }
 badge-nft = { path = "../badge-nft", default-features = false }
 reward-pool = { path = "../reward-pool", default-features = false }
 
