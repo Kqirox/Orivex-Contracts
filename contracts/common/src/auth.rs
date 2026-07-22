@@ -73,10 +73,7 @@ pub fn initialize_admin(env: &Env, admin: &Address, admin_key: &Symbol) {
 ///
 /// Returns `true` if the contract is paused, `false` otherwise.
 pub fn is_paused(env: &Env, paused_key: &Symbol) -> bool {
-    env.storage()
-        .instance()
-        .get(paused_key)
-        .unwrap_or(false)
+    env.storage().instance().get(paused_key).unwrap_or(false)
 }
 
 /// Requires that the contract is not paused.
