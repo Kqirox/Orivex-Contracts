@@ -1,5 +1,7 @@
 #![no_std]
 
+use contracts_common::errors::ContractError;
+
 pub const INITIAL_COURSE_ID: u32 = 1;
 
 pub const MAX_COURSE_ID: u32 = u32::MAX;
@@ -95,7 +97,7 @@ impl CourseRegistry {
     /// by the deployer.
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("Already initialized");
+            panic!("{}", ContractError::AlreadyInitialized.msg());
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
     }
@@ -412,10 +414,11 @@ impl CourseRegistry {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("Contract not initialized");
+            .expect(ContractError::NotInitialized.msg());
         assert!(
-            verifier == stored_admin,
-            "Unauthorized: Caller is not the protocol admin"
+            admin == stored_admin,
+            "{}",
+            ContractError::Unauthorized.msg()
         );
 
         // 3. Retrieve the course to validate it exists and get total_modules
