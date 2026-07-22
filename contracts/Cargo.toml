@@ -11,10 +11,7 @@ resolver = "2"
 
 [workspace.dependencies]
 soroban-sdk = "23"
-ethnum = "1.6.0"
-
-[patch.crates-io]
-ethnum = { version = "1.6.0" }
+ethnum = "1.5.3"
 
 [profile.release]
 overflow-checks = true
