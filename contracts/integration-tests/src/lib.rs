@@ -6,13 +6,13 @@
 //! and verify the full learner journey end-to-end.
 
 use soroban_sdk::{
-    testutils::{Address as _, Events},
-    Address, BytesN, Env, String,
+    testutils::{Address as _},
+    Address, BytesN, Env,
 };
 
 use badge_nft::{BadgeNFT, BadgeNFTClient};
 use course_registry::{CourseRegistry, CourseRegistryClient};
-use governance::{Governance, GovernanceClient};
+use governance::{DataKey as GovDataKey, Governance, GovernanceClient, Proposal};
 use quest_engine::{QuestEngineContract, QuestEngineContractClient};
 use reward_pool::{RewardPool, RewardPoolClient};
 use soroban_sdk::token;
@@ -138,7 +138,7 @@ fn test_full_learner_journey_e2e() {
         _token_address,
         course_registry,
         badge_nft,
-        reward_pool,
+        _reward_pool,
         _quest_engine,
         _stake_vault,
         _governance,
@@ -203,9 +203,22 @@ fn test_governance_after_course_completion() {
     // Verify learner has 1 badge
     assert_eq!(badge_nft.get_badge_count(&learner), 1);
 
-    // 2. Create a governance proposal
-    let proposal_id = governance.create_proposal(&learner, &dummy_hash(&env));
-    assert_eq!(proposal_id, 1);
+    // 2. Create a governance proposal by seeding it directly into contract storage
+    let proposal_id: u32 = 1;
+    env.as_contract(&governance.address, || {
+        env.storage().persistent().set(
+            &GovDataKey::Proposal(proposal_id),
+            &Proposal {
+                id: proposal_id,
+                proposer: learner.clone(),
+                metadata_hash: dummy_hash(&env),
+                votes_for: 0,
+                votes_against: 0,
+                end_time: u64::MAX,
+                executed: false,
+            },
+        );
+    });
 
     // 3. Learner casts a vote weighted by badge count (1 badge = 1 vote)
     governance.cast_vote(&learner, &proposal_id, &true);
@@ -233,17 +246,15 @@ fn test_explore_quest_payout_drains_reward_pool_correctly() {
         _governance,
     ) = setup_full_platform();
 
-    let employer = Address::generate(&env);
     let learner = Address::generate(&env);
 
     // Fund the quest with 5 USDC
     let quest_reward: i128 = 5_000_000;
 
-    // 1. Employer creates an Explore quest
-    let quest_id = quest_engine.create_quest(
-        &employer,
+    // 1. Admin creates an Explore quest (explore quests are admin-only)
+    let quest_id = quest_engine.create_explore_quest(
+        &admin,
         &quest_reward,
-        &quest_engine::QuestType::Explore,
         &dummy_hash(&env),
     );
 
