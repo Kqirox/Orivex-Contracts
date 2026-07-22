@@ -19,10 +19,10 @@ pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
+use contracts_common::require_admin;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
 };
-use contracts_common::require_admin;
 
 #[contractclient(name = "StakeVaultClient")]
 pub trait StakeVaultInterface {

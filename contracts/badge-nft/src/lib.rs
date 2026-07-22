@@ -59,8 +59,8 @@ pub struct ContractUpgraded {
 // to avoid duplicate symbol errors at link time.
 #[cfg(feature = "contract")]
 mod contract_impl {
-    use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
     use contracts_common::require_admin;
+    use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 
     use crate::types::{Badge, DataKey};
     use crate::{BadgeMinted, BadgeRevoked, ContractUpgraded};

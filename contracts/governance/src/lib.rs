@@ -13,11 +13,11 @@ pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 604800;
 // Crate overview — badge-weighted proposal lifecycle: create,
 // vote, execute, cancel. Vote weight = number of badges owned at
 // the moment of the cast.
+use contracts_common::require_admin;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contracttype, symbol_short, Address,
     BytesN, Env, Symbol, Vec,
 };
-use contracts_common::require_admin;
 
 pub mod types;
 

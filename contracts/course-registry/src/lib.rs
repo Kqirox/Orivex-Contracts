@@ -15,8 +15,8 @@ pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
 // Crate overview — manages the lifecycle of on-chain courses,
 // their progress records, course completion mint of soulbound
 // badges, and RewardPool payout triggering.
-use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 use contracts_common::require_admin;
+use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
 pub mod types;
 use types::{Course, DataKey};

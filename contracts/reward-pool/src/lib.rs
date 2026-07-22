@@ -78,8 +78,8 @@ pub struct ContractUpgraded {
 
 #[cfg(feature = "contract")]
 mod contract_impl {
-    use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
     use contracts_common::require_admin;
+    use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
     use crate::types::DataKey;
     use crate::{
