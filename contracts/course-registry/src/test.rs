@@ -594,7 +594,10 @@ fn test_pending_reward_recorded_when_reward_pool_configured() {
     let has_pending = env.as_contract(&client.address, || {
         env.storage()
             .persistent()
-            .has(&crate::types::DataKey::PendingReward(learner.clone(), course_id))
+            .has(&crate::types::DataKey::PendingReward(
+                learner.clone(),
+                course_id,
+            ))
     });
     assert!(!has_pending);
 }
@@ -656,10 +659,12 @@ fn test_claim_completion_reward_succeeds() {
 
     // Verify pending reward was cleared
     let has_pending = env2.as_contract(&client2.address, || {
-        env2.storage().persistent().has(&crate::types::DataKey::PendingReward(
-            learner2.clone(),
-            course_id2,
-        ))
+        env2.storage()
+            .persistent()
+            .has(&crate::types::DataKey::PendingReward(
+                learner2.clone(),
+                course_id2,
+            ))
     });
     assert!(!has_pending);
 }

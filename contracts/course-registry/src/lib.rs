@@ -448,11 +448,7 @@ impl CourseRegistry {
 
         // Record pending reward if course is completed and RewardPool is configured
         if course_completed {
-            if env
-                .storage()
-                .instance()
-                .has(&DataKey::RewardPoolAddress)
-            {
+            if env.storage().instance().has(&DataKey::RewardPoolAddress) {
                 env.storage()
                     .persistent()
                     .set(&DataKey::PendingReward(learner.clone(), id), &true);
