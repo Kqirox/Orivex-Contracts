@@ -13,6 +13,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+contracts-common = { path = "../common" }
 badge-nft = { path = "../badge-nft", default-features = false }
 reward-pool = { path = "../reward-pool", default-features = false }
 

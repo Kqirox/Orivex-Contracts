@@ -793,7 +793,7 @@ fn test_batch_review_missing_submission_panics() {
 // ── upgrade_contract Tests ────────────────────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_upgrade_contract_non_admin_panics() {
     let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
     let attacker = Address::generate(&env);
@@ -833,7 +833,7 @@ fn test_create_explore_quest_success() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_create_explore_quest_unauthorized() {
     let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
     let unauthorized = Address::generate(&env);
@@ -895,7 +895,7 @@ fn test_verify_explore_quest_success() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_verify_explore_quest_unauthorized() {
     let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
     let unauthorized = Address::generate(&env);

@@ -79,6 +79,7 @@ pub struct ContractUpgraded {
 #[cfg(feature = "contract")]
 mod contract_impl {
     use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
+    use contracts_common::require_admin;
 
     use crate::types::DataKey;
     use crate::{
@@ -138,20 +139,12 @@ mod contract_impl {
         /// spender is recorded under `DataKey::Spender(address)` in
         /// persistent storage. Re-whitelisting is allowed (idempotent).
         pub fn add_approved_spender(env: Env, admin: Address, spender: Address) {
-            // 1. Fetch 'Admin' address from Instance storage
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
-
-            // 2. Assert admin == stored_admin
-            if admin != stored_admin {
-                panic!("Unauthorized");
-            }
-
-            // 3. admin.require_auth()
-            admin.require_auth();
+            require_admin(&env, &admin, &stored_admin);
 
             // 4. Save `true` to Persistent storage using DataKey::Spender(spender.clone())
             env.storage()
@@ -176,20 +169,12 @@ mod contract_impl {
         /// breaker. Admin-only. When `IsPaused` is true,
         /// `distribute_reward` returns early with `"Contract is paused"`.
         pub fn set_pause(env: Env, admin: Address, status: bool) {
-            // 1. Fetch 'Admin' address from Instance storage
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
-
-            // 2. Assert admin == stored_admin
-            if admin != stored_admin {
-                panic!("Unauthorized");
-            }
-
-            // 3. admin.require_auth()
-            admin.require_auth();
+            require_admin(&env, &admin, &stored_admin);
 
             // 4. Store pause status in Instance storage
             env.storage().instance().set(&DataKey::IsPaused, &status);
@@ -312,20 +297,12 @@ mod contract_impl {
         /// `EmergencySweep` with the swept amount. Intended for
         /// incidents requiring a full token rescue.
         pub fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address) {
-            // 1. admin.require_auth()
-            admin.require_auth();
-
-            // 2. Fetch stored admin from Instance storage
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
-
-            // 3. Assert admin == stored_admin
-            if admin != stored_admin {
-                panic!("Unauthorized");
-            }
+            require_admin(&env, &admin, &stored_admin);
 
             // 4. Fetch token address from Instance storage
             let token_id: Address = env
@@ -357,14 +334,12 @@ mod contract_impl {
         /// Soroban host. Admin-only. Emits `ContractUpgraded` on
         /// successful deployment of the new WASM.
         pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-            admin.require_auth();
-
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
-            assert!(admin == stored_admin, "Unauthorized");
+            require_admin(&env, &admin, &stored_admin);
 
             env.deployer()
                 .update_current_contract_wasm(new_wasm_hash.clone());

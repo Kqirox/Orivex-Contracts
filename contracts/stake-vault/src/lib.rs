@@ -20,6 +20,7 @@ pub const DEFAULT_LOCK_PERIOD_SECONDS: u64 = 604800;
 // Provides `get_multiplier(user)` for cross-contract use by
 // QuestEngine on review-time payout calculation.
 use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
+use contracts_common::require_admin;
 
 pub mod types;
 use types::{DataKey, StakeInfo};
@@ -191,16 +192,12 @@ impl StakeVault {
     /// Soroban host. Admin-only. Emits `ContractUpgraded` on
     /// successful deployment.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-        if admin != stored_admin {
-            panic!("Unauthorized");
-        }
+        require_admin(&env, &admin, &stored_admin);
 
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
