@@ -59,6 +59,7 @@ pub struct ContractUpgraded {
 // to avoid duplicate symbol errors at link time.
 #[cfg(feature = "contract")]
 mod contract_impl {
+    use contracts_common::require_admin;
     use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 
     use crate::types::{Badge, DataKey};
@@ -96,17 +97,12 @@ mod contract_impl {
         /// the learner's badge vector and panicking on match. This enforces
         /// one-badge-per-course invariants.
         pub fn mint_badge(env: Env, caller: Address, learner: Address, course_id: u32) {
-            caller.require_auth();
-
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Contract not initialized");
-            assert!(
-                caller == stored_admin,
-                "Unauthorized: Caller is not the authorized registry"
-            );
+            require_admin(&env, &caller, &stored_admin);
 
             let badges_key = DataKey::UserBadges(learner.clone());
             let mut badges: Vec<Badge> = env
@@ -152,19 +148,12 @@ mod contract_impl {
         /// from the learner's `Badge` vector. If the badge is not present,
         /// the function is a no-op (no event emitted, no panic).
         pub fn revoke_badge(env: Env, admin: Address, learner: Address, course_id: u32) {
-            // 1. admin.require_auth()
-            admin.require_auth();
-
-            // 2. Fetch 'Admin' (Registry) address from Instance storage. Assert caller == Admin.
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Contract not initialized");
-            assert!(
-                admin == stored_admin,
-                "Unauthorized: Caller is not the authorized registry"
-            );
+            require_admin(&env, &admin, &stored_admin);
 
             // 3. Construct DataKey::UserBadges(learner).
             let badges_key = DataKey::UserBadges(learner.clone());
@@ -255,14 +244,12 @@ mod contract_impl {
         /// Soroban host. Admin-only. Emits `ContractUpgraded` on
         /// success; panics with `"Unauthorized"` for non-admins.
         pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-            admin.require_auth();
-
             let stored_admin: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::Admin)
                 .expect("Not initialized");
-            assert!(admin == stored_admin, "Unauthorized");
+            require_admin(&env, &admin, &stored_admin);
 
             env.deployer()
                 .update_current_contract_wasm(new_wasm_hash.clone());

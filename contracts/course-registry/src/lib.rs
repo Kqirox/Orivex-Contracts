@@ -15,6 +15,7 @@ pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
 // Crate overview — manages the lifecycle of on-chain courses,
 // their progress records, course completion mint of soulbound
 // badges, and RewardPool payout triggering.
+use contracts_common::require_admin;
 use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
 pub mod types;
@@ -108,17 +109,12 @@ impl CourseRegistry {
     /// RewardPool must additionally whitelist the CourseRegistry via
     /// `add_approved_spender` before payouts will execute.
     pub fn set_reward_pool_address(env: Env, admin: Address, reward_pool_address: Address) {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Contract not initialized");
-        assert!(
-            admin == stored_admin,
-            "Unauthorized: Caller is not the protocol admin"
-        );
+        require_admin(&env, &admin, &stored_admin);
 
         env.storage()
             .instance()
@@ -132,17 +128,12 @@ impl CourseRegistry {
     /// `"Unauthorized: Caller is not the protocol admin"` if the caller
     /// isn't the configured Protocol Admin.
     pub fn set_badge_nft_address(env: Env, admin: Address, badge_nft_address: Address) {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Contract not initialized");
-        assert!(
-            admin == stored_admin,
-            "Unauthorized: Caller is not the protocol admin"
-        );
+        require_admin(&env, &admin, &stored_admin);
 
         env.storage()
             .instance()
@@ -161,17 +152,12 @@ impl CourseRegistry {
         total_modules: u32,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Contract not initialized");
-        assert!(
-            admin == stored_admin,
-            "Unauthorized: Caller is not the protocol admin"
-        );
+        require_admin(&env, &admin, &stored_admin);
 
         assert!(total_modules > 0, "total_modules must be greater than 0");
 
@@ -275,19 +261,12 @@ impl CourseRegistry {
     /// change is persisted in `DataKey::Course(id)` and the course
     /// remains in storage so prior learner progress is preserved.
     pub fn set_course_status(env: Env, admin: Address, id: u32, active: bool) {
-        // 1. Authenticate the admin cryptographically
-        admin.require_auth();
-
-        // 2. Verify caller is the officially registered Protocol Admin
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Contract not initialized");
-        assert!(
-            admin == stored_admin,
-            "Unauthorized: Caller is not the protocol admin"
-        );
+        require_admin(&env, &admin, &stored_admin);
 
         // 3. Retrieve the course using the CORRECT DataKey
         let mut course: Course = env
@@ -404,19 +383,12 @@ impl CourseRegistry {
     /// additionally cross-calls the BadgeNFT (mint soulbound badge) and
     /// the RewardPool (USDC payout) when those addresses are wired.
     pub fn complete_module(env: Env, verifier: Address, learner: Address, id: u32) {
-        // 1. Authenticate the verifier's signature
-        verifier.require_auth();
-
-        // 2. Verify the verifier is the authorized protocol admin
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Contract not initialized");
-        assert!(
-            verifier == stored_admin,
-            "Unauthorized: Caller is not the protocol admin"
-        );
+        require_admin(&env, &verifier, &stored_admin);
 
         // 3. Retrieve the course to validate it exists and get total_modules
         let course: Course = env
@@ -495,14 +467,12 @@ impl CourseRegistry {
     /// `"Unauthorized"`. The `ContractUpgraded` event is published
     /// with both the admin's address and the new WASM hash.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-        assert!(admin == stored_admin, "Unauthorized");
+        require_admin(&env, &admin, &stored_admin);
 
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());

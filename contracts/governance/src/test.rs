@@ -397,7 +397,7 @@ fn test_cancel_proposal_emits_event() {
 // ── upgrade_contract Tests ────────────────────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_upgrade_contract_by_non_admin_panics() {
     let (env, governance_client, badge_client, admin) = setup();
     let badge_admin = Address::generate(&env);

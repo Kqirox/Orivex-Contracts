@@ -181,7 +181,7 @@ fn test_mint_badge_not_initialized() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized: Caller is not the authorized registry")]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
 fn test_mint_badge_unauthorized_caller() {
     let (env, client) = setup();
     let registry = Address::generate(&env);
@@ -279,7 +279,7 @@ fn test_revoke_badge_emits_event() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized: Caller is not the authorized registry")]
+#[should_panic(expected = "Error(Contract, #1)")]
 fn test_revoke_badge_unauthorized_caller() {
     let (env, client) = setup();
     let registry = Address::generate(&env);

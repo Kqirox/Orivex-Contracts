@@ -19,6 +19,7 @@ pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
+use contracts_common::require_admin;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
 };
@@ -141,20 +142,12 @@ impl QuestEngineContract {
     /// `batch_review_submissions` panic early with
     /// `"Contract is paused"`.
     pub fn set_pause(env: Env, admin: Address, status: bool) {
-        // 1. Fetch 'Admin' address from Instance storage
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-
-        // 2. Assert admin == stored_admin
-        if admin != stored_admin {
-            panic!("Unauthorized");
-        }
-
-        // 3. admin.require_auth()
-        admin.require_auth();
+        require_admin(&env, &admin, &stored_admin);
 
         // 4. Store pause status in Instance storage
         env.storage().instance().set(&DataKey::IsPaused, &status);
@@ -247,16 +240,12 @@ impl QuestEngineContract {
         reward_amount: i128,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // 1. admin.require_auth()
-        admin.require_auth();
-
-        // 2. Verify admin
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-        assert!(admin == stored_admin, "Unauthorized");
+        require_admin(&env, &admin, &stored_admin);
 
         // 3. Increment Quest ID counter
         let mut quest_id: u32 = env
@@ -599,14 +588,12 @@ impl QuestEngineContract {
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-        assert!(admin == stored_admin, "Unauthorized");
+        require_admin(&env, &admin, &stored_admin);
 
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
@@ -637,16 +624,12 @@ impl QuestEngineContract {
     /// the configured RewardPool. The QuestEngine must be whitelisted
     /// as an approved spender on RewardPool.
     pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
-        // 1. admin.require_auth()
-        admin.require_auth();
-
-        // 2. Verify admin
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-        assert!(admin == stored_admin, "Unauthorized");
+        require_admin(&env, &admin, &stored_admin);
 
         // 3. Get quest
         let quest: Quest = env

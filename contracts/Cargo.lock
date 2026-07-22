@@ -160,6 +160,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 name = "badge-nft"
 version = "0.1.0"
 dependencies = [
+ "contracts-common",
  "soroban-sdk",
 ]
 
@@ -260,6 +261,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
+name = "contracts-common"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -270,6 +278,7 @@ name = "course-registry"
 version = "0.1.0"
 dependencies = [
  "badge-nft",
+ "contracts-common",
  "reward-pool",
  "soroban-sdk",
 ]
@@ -653,6 +662,7 @@ name = "governance"
 version = "0.1.0"
 dependencies = [
  "badge-nft",
+ "contracts-common",
  "soroban-sdk",
 ]
 
@@ -1003,6 +1013,7 @@ dependencies = [
 name = "quest-engine"
 version = "0.1.0"
 dependencies = [
+ "contracts-common",
  "soroban-sdk",
 ]
 
@@ -1069,6 +1080,7 @@ dependencies = [
 name = "reward-pool"
 version = "0.1.0"
 dependencies = [
+ "contracts-common",
  "soroban-sdk",
 ]
 
@@ -1486,6 +1498,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "stake-vault"
 version = "0.1.0"
 dependencies = [
+ "contracts-common",
  "soroban-sdk",
 ]
 

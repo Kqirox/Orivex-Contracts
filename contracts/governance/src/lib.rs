@@ -13,6 +13,7 @@ pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 604800;
 // Crate overview — badge-weighted proposal lifecycle: create,
 // vote, execute, cancel. Vote weight = number of badges owned at
 // the moment of the cast.
+use contracts_common::require_admin;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contracttype, symbol_short, Address,
     BytesN, Env, Symbol, Vec,
@@ -132,14 +133,12 @@ impl Governance {
     /// Soroban host. Admin-only. Emits `ContractUpgraded` on
     /// successful deployment.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
-        admin.require_auth();
-
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
-        assert!(admin == stored_admin, "Unauthorized");
+        require_admin(&env, &admin, &stored_admin);
 
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
