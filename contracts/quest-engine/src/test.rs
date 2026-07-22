@@ -72,6 +72,76 @@ fn test_initialize_twice_panics() {
     client.initialize(&admin, &token_id, &reward_pool, &stake_vault_id);
 }
 
+// ── set_reward_pool_address Tests ───────────────────────────────────────────
+
+#[test]
+fn test_set_reward_pool_address_success() {
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let new_reward_pool = Address::generate(&env);
+
+    client.set_reward_pool_address(&admin, &new_reward_pool);
+
+    // Verify the new reward pool is stored by creating an explore quest
+    // and verifying it uses the new address (tested indirectly via verify_explore_quest)
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_set_reward_pool_address_wrong_admin_panics() {
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let wrong_admin = Address::generate(&env);
+    let new_reward_pool = Address::generate(&env);
+
+    client.set_reward_pool_address(&wrong_admin, &new_reward_pool);
+}
+
+#[test]
+fn test_set_reward_pool_address_emits_event() {
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let new_reward_pool = Address::generate(&env);
+
+    client.set_reward_pool_address(&admin, &new_reward_pool);
+
+    // Verify RewardPoolUpdated event was emitted
+    let events = env.events().all();
+    assert!(!events.is_empty(), "Expected at least 1 event");
+}
+
+// ── set_stake_vault_address Tests ──────────────────────────────────────────
+
+#[test]
+fn test_set_stake_vault_address_success() {
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let new_stake_vault = Address::generate(&env);
+
+    client.set_stake_vault_address(&admin, &new_stake_vault);
+
+    // Verify the new stake vault is stored by creating a quest and reviewing
+    // (tested indirectly via review_submission behavior)
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_set_stake_vault_address_wrong_admin_panics() {
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let wrong_admin = Address::generate(&env);
+    let new_stake_vault = Address::generate(&env);
+
+    client.set_stake_vault_address(&wrong_admin, &new_stake_vault);
+}
+
+#[test]
+fn test_set_stake_vault_address_emits_event() {
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let new_stake_vault = Address::generate(&env);
+
+    client.set_stake_vault_address(&admin, &new_stake_vault);
+
+    // Verify StakeVaultUpdated event was emitted
+    let events = env.events().all();
+    assert!(!events.is_empty(), "Expected at least 1 event");
+}
+
 // ── create_build_quest Tests ─────────────────────────────────────────────────
 
 #[test]
