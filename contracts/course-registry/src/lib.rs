@@ -23,6 +23,8 @@ use types::{Course, DataKey};
 use badge_nft::BadgeNFTClient;
 use reward_pool::RewardPoolClient;
 
+use orivex_common::bump_persistent;
+
 #[contract]
 pub struct CourseRegistry;
 
@@ -189,9 +191,11 @@ impl CourseRegistry {
             metadata_hash,
             active: true,
         };
+        let course_key = DataKey::Course(new_id);
         env.storage()
             .persistent()
-            .set(&DataKey::Course(new_id), &course);
+            .set(&course_key, &course);
+        bump_persistent(&env, &course_key);
 
         CourseCreated {
             id: new_id,
@@ -209,11 +213,13 @@ impl CourseRegistry {
     /// uses `course.instructor.require_auth()` for that check. The new
     /// hash must be a 32-byte BytesN pointing at IPFS CID metadata.
     pub fn update_metadata(env: Env, id: u32, new_hash: BytesN<32>) {
+        let course_key = DataKey::Course(id);
         let mut course: Course = env
             .storage()
             .persistent()
-            .get(&DataKey::Course(id))
+            .get(&course_key)
             .expect("Course not found");
+        bump_persistent(&env, &course_key);
 
         course.instructor.require_auth();
 
@@ -222,7 +228,8 @@ impl CourseRegistry {
 
         env.storage()
             .persistent()
-            .set(&DataKey::Course(id), &course);
+            .set(&course_key, &course);
+        bump_persistent(&env, &course_key);
 
         MetadataUpdated {
             id,
@@ -240,11 +247,13 @@ impl CourseRegistry {
     pub fn enroll(env: Env, learner: Address, id: u32) {
         learner.require_auth();
 
+        let course_key = DataKey::Course(id);
         let course: Course = env
             .storage()
             .persistent()
-            .get(&DataKey::Course(id))
+            .get(&course_key)
             .expect("Course not found");
+        bump_persistent(&env, &course_key);
 
         assert!(course.active, "Course is not active");
 
@@ -255,6 +264,7 @@ impl CourseRegistry {
         );
 
         env.storage().persistent().set(&progress_key, &0u32);
+        bump_persistent(&env, &progress_key);
     }
 
     /// Helper to check the current total number of courses.
@@ -290,17 +300,20 @@ impl CourseRegistry {
         );
 
         // 3. Retrieve the course using the CORRECT DataKey
+        let course_key = DataKey::Course(id);
         let mut course: Course = env
             .storage()
             .persistent()
-            .get(&DataKey::Course(id))
+            .get(&course_key)
             .expect("Course not found");
+        bump_persistent(&env, &course_key);
 
         // 4. Update the active status and save it
         course.active = active;
         env.storage()
             .persistent()
-            .set(&DataKey::Course(id), &course);
+            .set(&course_key, &course);
+        bump_persistent(&env, &course_key);
 
         // 5. Emit the standard event
         CourseStatusChanged { id, active }.publish(&env);
@@ -311,46 +324,41 @@ impl CourseRegistry {
     /// `course.total_modules`. The check is defensive — progress
     /// values exceeding total_modules also count as finished.
     pub fn is_course_finished(env: Env, learner: Address, id: u32) -> bool {
+        let course_key = DataKey::Course(id);
         let course: Course = env
             .storage()
             .persistent()
-            .get(&DataKey::Course(id))
+            .get(&course_key)
             .expect("Course not found");
+        bump_persistent(&env, &course_key);
 
+        let progress_key = DataKey::Progress(learner, id);
         let progress: u32 = env
             .storage()
             .persistent()
-            .get(&DataKey::Progress(learner, id))
+            .get(&progress_key)
             .unwrap_or(0);
+        // Only bump the progress key if it actually exists
+        if env.storage().persistent().has(&progress_key) {
+            bump_persistent(&env, &progress_key);
+        }
 
         progress >= course.total_modules
     }
 
     /// Returns the full details of a specific course.
     ///
-    /// # Arguments
-    /// * `env` - The Soroban environment
-    /// * `id` - The course ID
-    ///
-    /// # Returns
-    /// The Course struct if found
-    ///
     /// # Panics
-    /// Panics if the course ID is invalid (course doesn't exist in storage)
-    /// Reads a Course struct from persistent storage by ID. The
-    /// function panics with `"Course not found"` when the ID has
-    /// no record, which is the deliberate failure mode for an
-    /// out-of-bounds lookup.
+    /// Panics if the course ID is invalid (course doesn't exist in storage).
     pub fn get_course(env: Env, id: u32) -> Course {
-        // 1. Construct DataKey::Course(id)
         let key = DataKey::Course(id);
-
-        // 2. Fetch Course struct from Persistent storage
-        // 3. Assert course exists (panic if not found)
-        env.storage()
+        let course: Course = env
+            .storage()
             .persistent()
             .get(&key)
-            .expect("Course not found")
+            .expect("Course not found");
+        bump_persistent(&env, &key);
+        course
     }
 
     /// Returns a learner's completed module count for a course. Returns 0 if the learner has not enrolled.
@@ -360,7 +368,11 @@ impl CourseRegistry {
     /// explicitly call `enroll`.
     pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
         let key = DataKey::Progress(learner, id);
-        env.storage().persistent().get(&key).unwrap_or(0)
+        let progress: u32 = env.storage().persistent().get(&key).unwrap_or(0);
+        if env.storage().persistent().has(&key) {
+            bump_persistent(&env, &key);
+        }
+        progress
     }
 
     /// Transfers ownership of a course to a new instructor address.
@@ -371,11 +383,13 @@ impl CourseRegistry {
         new_instructor: Address,
         course_id: u32,
     ) {
+        let course_key = DataKey::Course(course_id);
         let mut course: Course = env
             .storage()
             .persistent()
-            .get(&DataKey::Course(course_id))
+            .get(&course_key)
             .expect("Course not found");
+        bump_persistent(&env, &course_key);
 
         assert!(
             course.instructor == current_instructor,
@@ -387,7 +401,8 @@ impl CourseRegistry {
         course.instructor = new_instructor.clone();
         env.storage()
             .persistent()
-            .set(&DataKey::Course(course_id), &course);
+            .set(&course_key, &course);
+        bump_persistent(&env, &course_key);
 
         OwnershipTransferred {
             course_id,
@@ -419,17 +434,20 @@ impl CourseRegistry {
         );
 
         // 3. Retrieve the course to validate it exists and get total_modules
+        let course_key = DataKey::Course(id);
         let course: Course = env
             .storage()
             .persistent()
-            .get(&DataKey::Course(id))
+            .get(&course_key)
             .expect("Course not found");
+        bump_persistent(&env, &course_key);
 
         // 4. Retrieve current progress (defaults to 0 if not set)
+        let progress_key = DataKey::Progress(learner.clone(), id);
         let current_progress: u32 = env
             .storage()
             .persistent()
-            .get(&DataKey::Progress(learner.clone(), id))
+            .get(&progress_key)
             .unwrap_or(0);
 
         // 5. Assert current progress is less than total_modules
@@ -441,10 +459,11 @@ impl CourseRegistry {
         // 6. Increment progress by 1
         let new_progress = current_progress + 1;
 
-        // 7. Save new progress to persistent storage
+        // 7. Save new progress to persistent storage and bump TTL
         env.storage()
             .persistent()
-            .set(&DataKey::Progress(learner.clone(), id), &new_progress);
+            .set(&progress_key, &new_progress);
+        bump_persistent(&env, &progress_key);
 
         // 8. Emit ModuleCompleted event
         ModuleCompleted {

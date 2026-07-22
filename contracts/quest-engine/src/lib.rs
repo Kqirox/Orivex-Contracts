@@ -19,6 +19,8 @@ pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 pub mod types;
 use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
+use orivex_common::bump_persistent;
+
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
 };
@@ -127,55 +129,33 @@ impl QuestEngineContract {
     }
 
     /// Toggles the pause state of the contract (emergency circuit breaker).
-    ///
-    /// # Arguments
-    /// * `admin` - The admin address (must match stored admin)
-    /// * `status` - The pause status (true = paused, false = unpaused)
-    ///
-    /// # Panics
-    /// * If contract is not initialized
-    /// * If admin does not match stored admin
-    /// * If admin authentication fails
-    /// Sets the `IsPaused` flag in instance storage as a circuit
-    /// breaker. Admin-only. When true, `review_submission` and
-    /// `batch_review_submissions` panic early with
-    /// `"Contract is paused"`.
     pub fn set_pause(env: Env, admin: Address, status: bool) {
-        // 1. Fetch 'Admin' address from Instance storage
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
 
-        // 2. Assert admin == stored_admin
         if admin != stored_admin {
             panic!("Unauthorized");
         }
 
-        // 3. admin.require_auth()
         admin.require_auth();
 
-        // 4. Store pause status in Instance storage
         env.storage().instance().set(&DataKey::IsPaused, &status);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
-    /// This acts as an isolated vault specifically for B2B bounties.
-    /// Employer-funded quest that is funded out of the employer's
-    /// balance at create time. The full `reward_amount` is locked in
-    /// the QuestEngine contract; review actions later split it 85 / 15
-    /// between learner and reward-pool.
+    /// The full `reward_amount` is locked at create time; review actions
+    /// later split it 85/15 between learner and reward-pool.
     pub fn create_build_quest(
         env: Env,
         employer: Address,
         reward_amount: i128,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // 1. employer.require_auth()
         employer.require_auth();
 
-        // 2. Fetch token_client for the USDC asset.
         let token_address: Address = env
             .storage()
             .instance()
@@ -183,10 +163,8 @@ impl QuestEngineContract {
             .expect("Not initialized");
         let token_client = token::Client::new(&env, &token_address);
 
-        // 3. call token_client.transfer(employer, env.current_contract_address(), reward_amount).
         token_client.transfer(&employer, env.current_contract_address(), &reward_amount);
 
-        // 4. Increment Quest ID counter.
         let mut quest_id: u32 = env
             .storage()
             .instance()
@@ -197,7 +175,6 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::QuestCounter, &quest_id);
 
-        // 5. Create Quest struct with QuestType::Build.
         let quest = Quest {
             employer: employer.clone(),
             reward_amount,
@@ -206,12 +183,12 @@ impl QuestEngineContract {
             active: true,
         };
 
-        // 6. Save to Persistent storage.
+        let quest_key = DataKey::Quest(quest_id);
         env.storage()
             .persistent()
-            .set(&DataKey::Quest(quest_id), &quest);
+            .set(&quest_key, &quest);
+        bump_persistent(&env, &quest_key);
 
-        // 7. Emit QuestCreated event.
         QuestCreated {
             employer,
             quest_id,
@@ -223,34 +200,16 @@ impl QuestEngineContract {
     }
 
     /// Creates an Explore Quest that will be funded by the RewardPool.
-    /// Explore Quests are for off-chain actions verified by the admin.
-    ///
-    /// # Arguments
-    /// * `admin` - The admin address (must match stored admin)
-    /// * `reward_amount` - The amount to be paid from RewardPool upon verification
-    /// * `metadata_hash` - Hash of the quest metadata (description, requirements, etc.)
-    ///
-    /// # Returns
-    /// The ID of the newly created quest
-    ///
-    /// # Panics
-    /// * If admin authentication fails
-    /// * If admin does not match stored admin
-    /// * If contract is not initialized
-    /// Admin-only creation of an Explore Quest that the RewardPool
-    /// will fund on verification. The employer field is set to the
-    /// admin so that downstream payout flows can route via the
-    /// RewardPool's `distribute_reward` call.
+    /// Admin-only. The employer field is set to the admin so downstream
+    /// payout flows can route via RewardPool's `distribute_reward`.
     pub fn create_explore_quest(
         env: Env,
         admin: Address,
         reward_amount: i128,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // 1. admin.require_auth()
         admin.require_auth();
 
-        // 2. Verify admin
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -258,7 +217,6 @@ impl QuestEngineContract {
             .expect("Not initialized");
         assert!(admin == stored_admin, "Unauthorized");
 
-        // 3. Increment Quest ID counter
         let mut quest_id: u32 = env
             .storage()
             .instance()
@@ -269,7 +227,6 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::QuestCounter, &quest_id);
 
-        // 4. Create Quest struct with QuestType::Explore
         let quest = Quest {
             employer: admin.clone(),
             reward_amount,
@@ -278,12 +235,12 @@ impl QuestEngineContract {
             active: true,
         };
 
-        // 5. Save to Persistent storage
+        let quest_key = DataKey::Quest(quest_id);
         env.storage()
             .persistent()
-            .set(&DataKey::Quest(quest_id), &quest);
+            .set(&quest_key, &quest);
+        bump_persistent(&env, &quest_key);
 
-        // 6. Emit QuestCreated event
         QuestCreated {
             employer: admin,
             quest_id,
@@ -294,29 +251,31 @@ impl QuestEngineContract {
         quest_id
     }
 
-    /// Returns a quest by its ID.
-    /// Reads a Quest struct from persistent storage by ID. Returns
-    /// `None` when the ID has no record so callers can branch on
-    /// presence rather than panic.
+    /// Returns a quest by its ID. Returns `None` when not found.
     pub fn get_quest(env: Env, quest_id: u32) -> Option<Quest> {
-        env.storage().persistent().get(&DataKey::Quest(quest_id))
+        let quest_key = DataKey::Quest(quest_id);
+        let quest: Option<Quest> = env.storage().persistent().get(&quest_key);
+        if quest.is_some() {
+            bump_persistent(&env, &quest_key);
+        }
+        quest
     }
 
-    /// Allows a learner to submit proof for a build quest.
-    /// Stores a learner's proof hash for the given build quest in
-    /// `DataKey::Submission`. The associated quest must be active and
-    /// of `QuestType::Build`. Re-submission for the same pair panics
-    /// with `"Submission already exists"`.
+    /// Stores a learner's proof hash for the given build quest.
+    /// The associated quest must be active and of `QuestType::Build`.
+    /// Re-submission for the same (learner, quest) pair panics with
+    /// `"Submission already exists"`.
     pub fn submit_proof(env: Env, learner: Address, quest_id: u32, proof_hash: BytesN<32>) {
-        // 1. learner.require_auth()
         learner.require_auth();
 
-        // 2. Retrieve Quest. Assert it is active and QuestType == Build.
+        let quest_key = DataKey::Quest(quest_id);
         let quest: Quest = env
             .storage()
             .persistent()
-            .get(&DataKey::Quest(quest_id))
+            .get(&quest_key)
             .expect("Quest not found");
+        bump_persistent(&env, &quest_key);
+
         if !quest.active {
             panic!("Quest is not active");
         }
@@ -324,22 +283,19 @@ impl QuestEngineContract {
             panic!("Only Build quests accept submissions");
         }
 
-        // 3. Construct DataKey::Submission(learner, quest_id).
         let submission_key = DataKey::Submission(learner.clone(), quest_id);
 
-        // 4. Assert a submission doesn't already exist.
         if env.storage().persistent().has(&submission_key) {
             panic!("Submission already exists");
         }
 
-        // 5. Save struct { proof_hash, status: SubmissionStatus::Pending } to storage.
         let submission = Submission {
             proof_hash: proof_hash.clone(),
             status: SubmissionStatus::Pending,
         };
         env.storage().persistent().set(&submission_key, &submission);
+        bump_persistent(&env, &submission_key);
 
-        // 6. Emit ProofSubmitted event.
         ProofSubmitted {
             learner,
             quest_id,
@@ -348,21 +304,19 @@ impl QuestEngineContract {
         .publish(&env);
     }
 
-    /// Returns a submission by learner and quest ID.
-    /// Reads a learner's Submission struct for a given quest.
-    /// `None` indicates no submission has been recorded yet for the
-    /// (learner, quest_id) pair.
+    /// Returns a submission by learner and quest ID. Returns `None` if not found.
     pub fn get_submission(env: Env, learner: Address, quest_id: u32) -> Option<Submission> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Submission(learner, quest_id))
+        let submission_key = DataKey::Submission(learner, quest_id);
+        let submission: Option<Submission> = env.storage().persistent().get(&submission_key);
+        if submission.is_some() {
+            bump_persistent(&env, &submission_key);
+        }
+        submission
     }
 
-    /// Allows an employer to review and approve/reject a learner's submission.
-    /// Approves or rejects a single submission, applying the staking
-    /// multiplier from the configured StakeVault. The boosted learner
-    /// payout is capped at the available post-fee balance so that
-    /// employer-funded quests can never go negative.
+    /// Approves or rejects a single submission, applying the staking multiplier
+    /// from the configured StakeVault. The boosted learner payout is capped at
+    /// the available post-fee balance.
     pub fn review_submission(
         env: Env,
         employer: Address,
@@ -370,7 +324,6 @@ impl QuestEngineContract {
         quest_id: u32,
         approve: bool,
     ) {
-        // 0. Check if contract is paused
         let is_paused: bool = env
             .storage()
             .instance()
@@ -378,33 +331,33 @@ impl QuestEngineContract {
             .unwrap_or(false);
         assert!(!is_paused, "Contract is paused");
 
-        // 1. employer.require_auth()
         employer.require_auth();
 
-        // 2. Retrieve Quest. Assert quest.employer == employer.
+        let quest_key = DataKey::Quest(quest_id);
         let quest: Quest = env
             .storage()
             .persistent()
-            .get(&DataKey::Quest(quest_id))
+            .get(&quest_key)
             .expect("Quest not found");
+        bump_persistent(&env, &quest_key);
+
         if quest.employer != employer {
             panic!("Only the quest employer can review submissions");
         }
 
-        // 3. Retrieve Submission. Assert status == Pending.
         let submission_key = DataKey::Submission(learner.clone(), quest_id);
         let mut submission: Submission = env
             .storage()
             .persistent()
             .get(&submission_key)
             .expect("Submission not found");
+        bump_persistent(&env, &submission_key);
+
         if submission.status != SubmissionStatus::Pending {
             panic!("Submission is not pending review");
         }
 
-        // 4. If approve == true:
         if approve {
-            // a. Fetch token_client.transfer(env.current_contract_address(), learner, quest.reward_amount).
             let token_address: Address = env
                 .storage()
                 .instance()
@@ -415,7 +368,6 @@ impl QuestEngineContract {
             let fee = (quest.reward_amount * 15) / 100;
             let base_learner_amount = quest.reward_amount - fee;
 
-            // Fetch stake vault and get multiplier
             let stake_vault_address: Address = env
                 .storage()
                 .instance()
@@ -424,14 +376,9 @@ impl QuestEngineContract {
             let stake_vault_client = StakeVaultClient::new(&env, &stake_vault_address);
             let multiplier = stake_vault_client.get_multiplier(&learner);
 
-            // Apply multiplier (basis points: 100 = 1.0x, 120 = 1.2x, etc.)
-            // Note: The boosted amount is calculated but capped to base_learner_amount
-            // since the quest only has base_learner_amount available after fees.
-            // In production, employers should fund quests accounting for potential multipliers,
-            // or the boost should come from a separate reward pool contract with proper authorization.
             let calculated_boost = (base_learner_amount * multiplier as i128) / 100;
             let learner_amount = if calculated_boost > base_learner_amount {
-                base_learner_amount // Cap to available funds
+                base_learner_amount
             } else {
                 calculated_boost
             };
@@ -447,15 +394,12 @@ impl QuestEngineContract {
 
             submission.status = SubmissionStatus::Approved;
         } else {
-            // 5. If approve == false:
-            // a. Update submission status to Rejected.
             submission.status = SubmissionStatus::Rejected;
         }
 
-        // 6. Save updated submission to Persistent storage.
         env.storage().persistent().set(&submission_key, &submission);
+        bump_persistent(&env, &submission_key);
 
-        // 7. Emit SubmissionReviewed event.
         SubmissionReviewed {
             employer,
             learner,
@@ -466,18 +410,17 @@ impl QuestEngineContract {
     }
 
     /// Employer-only cancellation of an in-flight Build quest.
-    /// Returns the locked `reward_amount` to the employer's wallet
-    /// via the QuestEngine's token client and marks the quest
-    /// inactive. Panics with `"Quest already inactive"` if the
-    /// quest is already inactive.
+    /// Returns the locked `reward_amount` to the employer and marks the quest inactive.
     pub fn refund_quest(env: Env, employer: Address, quest_id: u32) {
         employer.require_auth();
 
+        let quest_key = DataKey::Quest(quest_id);
         let mut quest: Quest = env
             .storage()
             .persistent()
-            .get(&DataKey::Quest(quest_id))
+            .get(&quest_key)
             .expect("Quest not found");
+        bump_persistent(&env, &quest_key);
 
         if quest.employer != employer {
             panic!("Unauthorized");
@@ -489,7 +432,8 @@ impl QuestEngineContract {
         quest.active = false;
         env.storage()
             .persistent()
-            .set(&DataKey::Quest(quest_id), &quest);
+            .set(&quest_key, &quest);
+        bump_persistent(&env, &quest_key);
 
         let token_address: Address = env
             .storage()
@@ -511,20 +455,14 @@ impl QuestEngineContract {
         .publish(&env);
     }
 
-    /// Approves multiple learner submissions in a single transaction.
-    /// Executes the full fee-adjusted payout for each learner.
-    /// Approves a vector of learner submissions against a single
-    /// quest. Each submission must be `Pending`; the function
-    /// panics on the first non-pending submission. Emits both
-    /// individual `SubmissionReviewed` events and a single
-    /// `BatchReviewed` summary event with the approved count.
+    /// Approves a vector of learner submissions against a single quest in one transaction.
+    /// Emits individual `SubmissionReviewed` events and a `BatchReviewed` summary.
     pub fn batch_review_submissions(
         env: Env,
         employer: Address,
         quest_id: u32,
         learners: Vec<Address>,
     ) {
-        // 0. Check if contract is paused
         let is_paused: bool = env
             .storage()
             .instance()
@@ -534,11 +472,14 @@ impl QuestEngineContract {
 
         employer.require_auth();
 
+        let quest_key = DataKey::Quest(quest_id);
         let quest: Quest = env
             .storage()
             .persistent()
-            .get(&DataKey::Quest(quest_id))
+            .get(&quest_key)
             .expect("Quest not found");
+        bump_persistent(&env, &quest_key);
+
         if quest.employer != employer {
             panic!("Only the quest employer can review submissions");
         }
@@ -564,6 +505,7 @@ impl QuestEngineContract {
                 .persistent()
                 .get(&submission_key)
                 .expect("Submission not found");
+            bump_persistent(&env, &submission_key);
 
             if submission.status != SubmissionStatus::Pending {
                 panic!("Submission is not pending review");
@@ -577,6 +519,7 @@ impl QuestEngineContract {
 
             submission.status = SubmissionStatus::Approved;
             env.storage().persistent().set(&submission_key, &submission);
+            bump_persistent(&env, &submission_key);
 
             SubmissionReviewed {
                 employer: employer.clone(),
@@ -618,29 +561,12 @@ impl QuestEngineContract {
         .publish(&env);
     }
 
-    /// Verifies an Explore Quest completion and triggers payout from RewardPool.
-    /// Only the admin can call this function to reward off-chain actions.
-    ///
-    /// # Arguments
-    /// * `admin` - The admin address (must match stored admin)
-    /// * `learner` - The learner address to receive the reward
-    /// * `quest_id` - The ID of the Explore Quest to verify
-    ///
-    /// # Panics
-    /// * If admin authentication fails
-    /// * If admin does not match stored admin
-    /// * If quest is not found
-    /// * If quest type is not Explore
-    /// * If contract is not initialized
-    /// Admin-only confirmation that a learner completed an off-chain
-    /// action. Triggers a cross-contract `distribute_reward` call into
-    /// the configured RewardPool. The QuestEngine must be whitelisted
-    /// as an approved spender on RewardPool.
+    /// Admin-only confirmation that a learner completed an off-chain action.
+    /// Triggers a cross-contract `distribute_reward` call into the configured RewardPool.
+    /// The QuestEngine must be whitelisted as an approved spender on RewardPool.
     pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
-        // 1. admin.require_auth()
         admin.require_auth();
 
-        // 2. Verify admin
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -648,20 +574,19 @@ impl QuestEngineContract {
             .expect("Not initialized");
         assert!(admin == stored_admin, "Unauthorized");
 
-        // 3. Get quest
+        let quest_key = DataKey::Quest(quest_id);
         let quest: Quest = env
             .storage()
             .persistent()
-            .get(&DataKey::Quest(quest_id))
+            .get(&quest_key)
             .expect("Quest not found");
+        bump_persistent(&env, &quest_key);
 
-        // 4. Assert quest type is Explore
         assert!(
             quest.quest_type == QuestType::Explore,
             "Not an Explore quest"
         );
 
-        // 5. Get reward pool address and create client
         let reward_pool_address: Address = env
             .storage()
             .instance()
@@ -669,14 +594,12 @@ impl QuestEngineContract {
             .expect("Not initialized");
         let reward_pool_client = RewardPoolClient::new(&env, &reward_pool_address);
 
-        // 6. Distribute reward from RewardPool
         reward_pool_client.distribute_reward(
             &env.current_contract_address(),
             &learner,
             &quest.reward_amount,
         );
 
-        // 7. Emit ExploreQuestVerified event
         ExploreQuestVerified {
             admin,
             learner,

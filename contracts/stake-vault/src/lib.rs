@@ -24,6 +24,8 @@ use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN,
 pub mod types;
 use types::{DataKey, StakeInfo};
 
+use orivex_common::bump_persistent;
+
 #[contract]
 pub struct StakeVault;
 
@@ -98,21 +100,25 @@ impl StakeVault {
 
         let now = env.ledger().timestamp();
 
+        let stake_key = DataKey::UserStake(user.clone());
         let mut stake_info: StakeInfo = env
             .storage()
             .persistent()
-            .get(&DataKey::UserStake(user.clone()))
+            .get(&stake_key)
             .unwrap_or(StakeInfo {
                 amount: 0,
                 lock_timestamp: now,
             });
+        // Bump after read (no-op if key didn't exist yet)
+        bump_persistent(&env, &stake_key);
 
         stake_info.amount += amount;
         stake_info.lock_timestamp = now;
 
         env.storage()
             .persistent()
-            .set(&DataKey::UserStake(user.clone()), &stake_info);
+            .set(&stake_key, &stake_info);
+        bump_persistent(&env, &stake_key);
 
         Staked {
             user,
@@ -129,11 +135,13 @@ impl StakeVault {
     pub fn unstake(env: Env, user: Address) {
         user.require_auth();
 
+        let stake_key = DataKey::UserStake(user.clone());
         let stake_info: StakeInfo = env
             .storage()
             .persistent()
-            .get(&DataKey::UserStake(user.clone()))
+            .get(&stake_key)
             .expect("No stake found");
+        bump_persistent(&env, &stake_key);
 
         let lock_period: u64 = 604800;
         if env.ledger().timestamp() < stake_info.lock_timestamp + lock_period {
@@ -155,7 +163,7 @@ impl StakeVault {
 
         env.storage()
             .persistent()
-            .remove(&DataKey::UserStake(user.clone()));
+            .remove(&stake_key);
 
         Unstaked {
             user,
@@ -169,14 +177,18 @@ impl StakeVault {
     /// 120 (≥100 stake, 1.2x), and 200 (≥500 stake, 2.0x). Quest
     /// review paths consult this value to scale payouts.
     pub fn get_multiplier(env: Env, user: Address) -> u32 {
+        let stake_key = DataKey::UserStake(user);
         let stake_info: StakeInfo = env
             .storage()
             .persistent()
-            .get(&DataKey::UserStake(user))
+            .get(&stake_key)
             .unwrap_or(StakeInfo {
                 amount: 0,
                 lock_timestamp: 0,
             });
+        if env.storage().persistent().has(&stake_key) {
+            bump_persistent(&env, &stake_key);
+        }
 
         if stake_info.amount >= 500 {
             200
