@@ -1,0 +1,50 @@
+name: Security & Dependency Audit
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+    types:
+      - opened
+      - synchronize
+      - reopened
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  audit:
+    name: Dependency Audit & Policy Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: "./contracts"
+
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: Run cargo audit
+        run: cargo audit
+
+      - name: Run cargo deny check
+        run: cargo deny check

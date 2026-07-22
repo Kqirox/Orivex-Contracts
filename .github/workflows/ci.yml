@@ -6,6 +6,9 @@ on:
       - main
       - develop
   pull_request:
+    branches:
+      - main
+      - develop
     types:
       - opened
       - synchronize
@@ -15,7 +18,7 @@ jobs:
   ci:
     name: Rust CI
     runs-on: ubuntu-latest
-    
+
     defaults:
       run:
         working-directory: ./contracts
@@ -28,7 +31,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown, wasm32v1-none
+          targets: wasm32-unknown-unknown
 
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
@@ -37,7 +40,10 @@ jobs:
           workspaces: "./contracts"
 
       - name: Install Stellar CLI
-        uses: stellar/stellar-cli@v23.0.1
+        run: |
+          wget -q https://github.com/stellar/stellar-cli/releases/download/v23.0.1/stellar-cli-x86_64-unknown-linux-gnu.tar.gz
+          tar -xzf stellar-cli-x86_64-unknown-linux-gnu.tar.gz
+          sudo mv stellar /usr/local/bin/
 
       - name: Check formatting
         run: cargo fmt --all -- --check
