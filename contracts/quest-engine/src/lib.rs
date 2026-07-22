@@ -191,11 +191,7 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::RewardPool, &new_address);
 
-        RewardPoolUpdated {
-            admin,
-            new_address,
-        }
-        .publish(&env);
+        RewardPoolUpdated { admin, new_address }.publish(&env);
     }
 
     /// Updates the StakeVault address used for multiplier lookups.
@@ -215,11 +211,7 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::StakeVault, &new_address);
 
-        StakeVaultUpdated {
-            admin,
-            new_address,
-        }
-        .publish(&env);
+        StakeVaultUpdated { admin, new_address }.publish(&env);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
