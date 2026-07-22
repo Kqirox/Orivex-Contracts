@@ -1118,7 +1118,10 @@ fn test_review_submission_multiplier_120_capped_emits_event() {
             break;
         }
     }
-    assert!(found_payout_computed, "Expected at least one event from quest engine");
+    assert!(
+        found_payout_computed,
+        "Expected at least one event from quest engine"
+    );
 }
 
 #[test]
