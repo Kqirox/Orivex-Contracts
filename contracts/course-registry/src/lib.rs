@@ -417,8 +417,7 @@ impl CourseRegistry {
             .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized.msg()));
         assert!(
             verifier == stored_admin,
-            "{}",
-            ContractError::Unauthorized.msg()
+            "Unauthorized: Caller is not the protocol admin"
         );
 
         // 3. Retrieve the course to validate it exists and get total_modules
