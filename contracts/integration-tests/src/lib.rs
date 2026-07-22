@@ -5,10 +5,7 @@
 //! These tests deploy all six contracts against the same Soroban test env
 //! and verify the full learner journey end-to-end.
 
-use soroban_sdk::{
-    testutils::{Address as _},
-    Address, BytesN, Env,
-};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 use badge_nft::{BadgeNFT, BadgeNFTClient};
 use course_registry::{CourseRegistry, CourseRegistryClient};
@@ -252,11 +249,7 @@ fn test_explore_quest_payout_drains_reward_pool_correctly() {
     let quest_reward: i128 = 5_000_000;
 
     // 1. Admin creates an Explore quest (explore quests are admin-only)
-    let quest_id = quest_engine.create_explore_quest(
-        &admin,
-        &quest_reward,
-        &dummy_hash(&env),
-    );
+    let quest_id = quest_engine.create_explore_quest(&admin, &quest_reward, &dummy_hash(&env));
 
     // 2. Learner submits proof
     quest_engine.submit_proof(&learner, &quest_id, &dummy_hash(&env));
