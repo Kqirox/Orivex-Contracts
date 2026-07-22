@@ -365,6 +365,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "SpenderCount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 2
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Token"
                             }
                           ]

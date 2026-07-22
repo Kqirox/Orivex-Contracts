@@ -7,4 +7,8 @@ pub enum DataKey {
     Token,
     Spender(Address),
     IsPaused,
+    /// Running count of approved spender entries in persistent storage.
+    /// Incremented by `add_approved_spender`. Used by
+    /// `estimated_storage_footprint`.
+    SpenderCount,
 }

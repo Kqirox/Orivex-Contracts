@@ -98,14 +98,17 @@ impl StakeVault {
 
         let now = env.ledger().timestamp();
 
-        let mut stake_info: StakeInfo = env
+        let existing: Option<StakeInfo> = env
             .storage()
             .persistent()
-            .get(&DataKey::UserStake(user.clone()))
-            .unwrap_or(StakeInfo {
-                amount: 0,
-                lock_timestamp: now,
-            });
+            .get(&DataKey::UserStake(user.clone()));
+
+        let is_new_staker = existing.is_none();
+
+        let mut stake_info: StakeInfo = existing.unwrap_or(StakeInfo {
+            amount: 0,
+            lock_timestamp: now,
+        });
 
         stake_info.amount += amount;
         stake_info.lock_timestamp = now;
@@ -113,6 +116,18 @@ impl StakeVault {
         env.storage()
             .persistent()
             .set(&DataKey::UserStake(user.clone()), &stake_info);
+
+        // Increment staker count for new entries only.
+        if is_new_staker {
+            let prev: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::StakerCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::StakerCount, &(prev + 1));
+        }
 
         Staked {
             user,
@@ -157,6 +172,18 @@ impl StakeVault {
             .persistent()
             .remove(&DataKey::UserStake(user.clone()));
 
+        // Decrement the staker-count footprint tracker.
+        let prev: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::StakerCount)
+            .unwrap_or(0);
+        if prev > 0 {
+            env.storage()
+                .instance()
+                .set(&DataKey::StakerCount, &(prev - 1));
+        }
+
         Unstaked {
             user,
             amount: stake_info.amount,
@@ -185,6 +212,17 @@ impl StakeVault {
         } else {
             100
         }
+    }
+
+    /// Returns the estimated number of persistent storage entries for this
+    /// contract.  Each active staker has one `DataKey::UserStake(Address)`
+    /// entry. The count is maintained by `stake` (increment on first stake)
+    /// and `unstake` (decrement on withdrawal).
+    pub fn estimated_storage_footprint(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::StakerCount)
+            .unwrap_or(0)
     }
 
     /// Replaces the StakeVault WASM with the supplied hash on the

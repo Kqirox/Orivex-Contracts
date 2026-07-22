@@ -350,6 +350,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "QuestCount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 1
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "QuestCounter"
                             }
                           ]

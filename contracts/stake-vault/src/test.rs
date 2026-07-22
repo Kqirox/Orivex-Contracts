@@ -205,3 +205,64 @@ fn test_get_multiplier() {
     });
     assert_eq!(client.get_multiplier(&user), 200);
 }
+
+// ── estimated_storage_footprint ───────────────────────────────────────────────
+
+#[test]
+fn test_stake_vault_footprint_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    client.initialize(&admin, &token_id);
+    assert_eq!(client.estimated_storage_footprint(), 0);
+}
+
+#[test]
+fn test_stake_vault_footprint_increments_on_new_staker() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    client.initialize(&admin, &token_id);
+
+    let sac = token::StellarAssetClient::new(&env, &token_id);
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
+    sac.mint(&user_a, &500);
+    sac.mint(&user_b, &300);
+
+    client.stake(&user_a, &200);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    // Re-staking same user doesn't bump the counter
+    sac.mint(&user_a, &200);
+    client.stake(&user_a, &200);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    client.stake(&user_b, &100);
+    assert_eq!(client.estimated_storage_footprint(), 2);
+}
+
+#[test]
+fn test_stake_vault_footprint_decrements_on_unstake() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    client.initialize(&admin, &token_id);
+
+    let sac = token::StellarAssetClient::new(&env, &token_id);
+    let user = Address::generate(&env);
+    sac.mint(&user, &500);
+    client.stake(&user, &500);
+    assert_eq!(client.estimated_storage_footprint(), 1);
+
+    // Advance past lock period (1 week = 604800 seconds)
+    env.ledger().with_mut(|l| l.timestamp = 604_801);
+    client.unstake(&user);
+    assert_eq!(client.estimated_storage_footprint(), 0);
+}

@@ -12,10 +12,20 @@ pub const MAX_COURSE_ID: u32 = u32::MAX;
 pub const DEFAULT_TOTAL_MODULES_BOUND: u32 = 1000;
 
 pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
+
+/// TTL extension applied on every persistent read/write (≈ 30 days at 5 s/ledger).
+pub const PERSISTENT_BUMP_LEDGERS: u32 = 518_400;
+
+/// Threshold below which a bump is unconditionally applied on read.
+pub const PERSISTENT_TTL_THRESHOLD: u32 = 259_200;
+
+/// Maximum `FinishedProgressIndex` entries removed in a single sweep call.
+pub const SWEEP_BATCH_SIZE: u32 = 50;
+
 // Crate overview — manages the lifecycle of on-chain courses,
 // their progress records, course completion mint of soulbound
 // badges, and RewardPool payout triggering.
-use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env, Vec};
 
 pub mod types;
 use types::{Course, DataKey};
@@ -192,6 +202,11 @@ impl CourseRegistry {
         env.storage()
             .persistent()
             .set(&DataKey::Course(new_id), &course);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Course(new_id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_BUMP_LEDGERS,
+        );
 
         CourseCreated {
             id: new_id,
@@ -214,6 +229,11 @@ impl CourseRegistry {
             .persistent()
             .get(&DataKey::Course(id))
             .expect("Course not found");
+        env.storage().persistent().extend_ttl(
+            &DataKey::Course(id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_BUMP_LEDGERS,
+        );
 
         course.instructor.require_auth();
 
@@ -223,6 +243,11 @@ impl CourseRegistry {
         env.storage()
             .persistent()
             .set(&DataKey::Course(id), &course);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Course(id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_BUMP_LEDGERS,
+        );
 
         MetadataUpdated {
             id,
@@ -245,6 +270,11 @@ impl CourseRegistry {
             .persistent()
             .get(&DataKey::Course(id))
             .expect("Course not found");
+        env.storage().persistent().extend_ttl(
+            &DataKey::Course(id),
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_BUMP_LEDGERS,
+        );
 
         assert!(course.active, "Course is not active");
 
@@ -255,6 +285,21 @@ impl CourseRegistry {
         );
 
         env.storage().persistent().set(&progress_key, &0u32);
+        env.storage().persistent().extend_ttl(
+            &progress_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_BUMP_LEDGERS,
+        );
+
+        // Track the new progress entry in the running count.
+        let prev_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProgressCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProgressCount, &(prev_count + 1));
     }
 
     /// Helper to check the current total number of courses.
@@ -456,6 +501,17 @@ impl CourseRegistry {
 
         // 9. If the learner just finished the final module, mint their soulbound badge
         if new_progress == course.total_modules {
+            // Append to the finished-progress index so sweep_storage can find and
+            // reclaim this entry after the badge/reward are distributed.
+            let idx_key = DataKey::FinishedProgressIndex;
+            let mut index: Vec<(Address, u32)> = env
+                .storage()
+                .instance()
+                .get(&idx_key)
+                .unwrap_or_else(|| Vec::new(&env));
+            index.push_back((learner.clone(), id));
+            env.storage().instance().set(&idx_key, &index);
+
             if let Some(badge_nft_address) = env
                 .storage()
                 .instance()
@@ -487,6 +543,127 @@ impl CourseRegistry {
                 .publish(&env);
             }
         }
+    }
+
+    /// Returns an estimated count of persistent storage entries owned by this
+    /// contract. The figure is derived from two counters maintained inline:
+    ///
+    /// * `CourseCount` — one `DataKey::Course(id)` entry per course.
+    /// * `ProgressCount` — one `DataKey::Progress(learner, id)` entry per
+    ///   active enrollment (decremented by `sweep_storage`).
+    ///
+    /// This is a **view** function — no state is modified.
+    ///
+    /// # Cost-benefit notes
+    /// Soroban does not expose a storage-scan API so the count is maintained
+    /// via counters. The counters are stored in instance storage (cheap reads)
+    /// and are therefore always available at near-zero cost.
+    pub fn estimated_storage_footprint(env: Env) -> u32 {
+        let course_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CourseCount)
+            .unwrap_or(0);
+        let progress_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProgressCount)
+            .unwrap_or(0);
+        course_count + progress_count
+    }
+
+    /// Removes up to `SWEEP_BATCH_SIZE` completed-learner progress entries from
+    /// persistent storage, recovering rent that would otherwise accumulate
+    /// indefinitely.
+    ///
+    /// # Mechanism
+    /// When `complete_module` finalises a learner's course it appends the
+    /// `(learner, course_id)` pair to `DataKey::FinishedProgressIndex` (an
+    /// instance-stored `Vec`). `sweep_storage` pops up to `SWEEP_BATCH_SIZE`
+    /// entries from the **front** of that index, removes the corresponding
+    /// `DataKey::Progress` slot from persistent storage, and decrements the
+    /// `ProgressCount` counter.
+    ///
+    /// Call repeatedly (off-chain cron or governance action) to drain the
+    /// index over multiple transactions.
+    ///
+    /// # Admin-only
+    /// Only the Protocol Admin may call this function.
+    ///
+    /// # Arguments
+    /// * `admin` — must match the stored Protocol Admin.
+    /// * `sweep_learning_keys` — when `true` the function executes the sweep;
+    ///   when `false` it is a no-op (useful for dry-run or pause-sweep paths).
+    ///
+    /// # Returns
+    /// The number of entries actually removed in this call.
+    pub fn sweep_storage(env: Env, admin: Address, sweep_learning_keys: bool) -> u32 {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        if !sweep_learning_keys {
+            return 0;
+        }
+
+        let idx_key = DataKey::FinishedProgressIndex;
+        let mut index: Vec<(Address, u32)> = env
+            .storage()
+            .instance()
+            .get(&idx_key)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let total = index.len();
+        let to_remove = if total > SWEEP_BATCH_SIZE {
+            SWEEP_BATCH_SIZE
+        } else {
+            total
+        };
+
+        if to_remove == 0 {
+            return 0;
+        }
+
+        let mut removed: u32 = 0;
+
+        // Pop entries from the front (index 0) of the vector.
+        // After removing element 0, the next element shifts down to 0 again.
+        for _ in 0..to_remove {
+            let (learner, course_id) = index.get(0).expect("index invariant violated");
+            index.remove(0);
+
+            let progress_key = DataKey::Progress(learner, course_id);
+            if env.storage().persistent().has(&progress_key) {
+                env.storage().persistent().remove(&progress_key);
+
+                // Decrement the live-entry counter.
+                let prev_count: u32 = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::ProgressCount)
+                    .unwrap_or(0);
+                if prev_count > 0 {
+                    env.storage()
+                        .instance()
+                        .set(&DataKey::ProgressCount, &(prev_count - 1));
+                }
+
+                removed += 1;
+            }
+        }
+
+        // Write the trimmed index back.
+        env.storage().instance().set(&idx_key, &index);
+
+        removed
     }
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.

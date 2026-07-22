@@ -714,6 +714,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "QuestCount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 2
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "QuestCounter"
                             }
                           ]
@@ -744,6 +756,18 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "SubmissionCount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 2
                         }
                       },
                       {
