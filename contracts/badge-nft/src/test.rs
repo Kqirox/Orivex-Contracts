@@ -29,8 +29,8 @@ fn test_initialize_success() {
     // Initialize the contract
     client.initialize(&registry);
 
-    // Verify event was not emitted (initialize doesn't emit events in this pattern)
-    assert_eq!(env.events().all().len(), 0);
+    // Verify ContractInitialized event was emitted
+    assert_eq!(env.events().all().len(), 1);
 }
 
 #[test]

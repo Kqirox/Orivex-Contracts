@@ -162,7 +162,7 @@
           "v0": {
             "topics": [
               {
-                "symbol": "pool_initialized"
+                "symbol": "contract_initialized"
               },
               {
                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"

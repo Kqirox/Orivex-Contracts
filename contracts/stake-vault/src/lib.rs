@@ -28,7 +28,7 @@ use types::{DataKey, StakeInfo};
 pub struct StakeVault;
 
 #[contractevent]
-pub struct StakeVaultInitialized {
+pub struct ContractInitialized {
     #[topic]
     pub admin: Address,
     #[topic]
@@ -61,7 +61,7 @@ pub struct ContractUpgraded {
 #[contractimpl]
 impl StakeVault {
     /// Initializes the StakeVault with admin and reward token
-    /// addresses and emits `StakeVaultInitialized`. Admin-only at
+    /// addresses and emits `ContractInitialized`. Admin-only at
     /// deploy time. Re-initialization panics with
     /// `"Already initialized"`.
     pub fn initialize(env: Env, admin: Address, token: Address) {
@@ -74,7 +74,7 @@ impl StakeVault {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
 
-        StakeVaultInitialized { admin, token }.publish(&env);
+        ContractInitialized { admin, token }.publish(&env);
     }
 
     /// Locks tokens for the configured lock period and resets the

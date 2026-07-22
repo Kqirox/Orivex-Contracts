@@ -54,6 +54,12 @@ pub struct ContractUpgraded {
     pub new_wasm_hash: soroban_sdk::BytesN<32>,
 }
 
+#[contractevent]
+pub struct ContractInitialized {
+    #[topic]
+    pub admin: Address,
+}
+
 // The actual contract struct and implementation are only compiled when building
 // the badge-nft wasm itself (default feature). Dependents disable this feature
 // to avoid duplicate symbol errors at link time.
@@ -62,7 +68,7 @@ mod contract_impl {
     use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 
     use crate::types::{Badge, DataKey};
-    use crate::{BadgeMinted, BadgeRevoked, ContractUpgraded};
+    use crate::{BadgeMinted, BadgeRevoked, ContractInitialized, ContractUpgraded};
 
     #[contract]
     pub struct BadgeNFT;
@@ -82,6 +88,8 @@ mod contract_impl {
                 panic!("Already initialized");
             }
             env.storage().instance().set(&DataKey::Admin, &admin);
+
+            ContractInitialized { admin }.publish(&env);
         }
 
         /// Mints a Soulbound Token (badge) directly to the learner's address.

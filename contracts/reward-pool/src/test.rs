@@ -548,3 +548,121 @@ fn test_emergency_sweep_large_balance() {
     assert_eq!(token_client.balance(&client.address), 0);
     assert_eq!(token_client.balance(&recovery_wallet), 1_000_000);
 }
+
+// ── token_decimals Tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_token_decimals_returns_seven() {
+    let (_env, client) = setup();
+    assert_eq!(client.token_decimals(), 7);
+}
+
+// ── pool_balance Tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_pool_balance_returns_zero_initially() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    assert_eq!(client.pool_balance(), 0);
+}
+
+#[test]
+fn test_pool_balance_reflects_funding() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let donor = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&donor, &1000);
+
+    client.fund_pool(&donor, &600);
+
+    assert_eq!(client.pool_balance(), 600);
+}
+
+#[test]
+fn test_pool_balance_after_distributions() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &1000);
+
+    client.distribute_reward(&spender, &learner, &350);
+
+    assert_eq!(client.pool_balance(), 650);
+}
+
+// ── distribute_reward insufficient balance Tests ────────────────────────────
+
+#[test]
+#[should_panic(expected = "Insufficient pool balance")]
+fn test_distribute_reward_insufficient_balance() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &100);
+
+    // Try to distribute more than the pool holds — should panic
+    client.distribute_reward(&spender, &learner, &200);
+}
+
+#[test]
+#[should_panic(expected = "Insufficient pool balance")]
+fn test_distribute_reward_exact_balance_plus_one() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &500);
+
+    // Off-by-one: requesting 501 when only 500 available
+    client.distribute_reward(&spender, &learner, &501);
+}
+
+#[test]
+fn test_distribute_reward_exact_balance_succeeds() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &500);
+
+    // Exactly the full balance should succeed
+    client.distribute_reward(&spender, &learner, &500);
+
+    assert_eq!(token_client.balance(&learner), 500);
+    assert_eq!(client.pool_balance(), 0);
+}
