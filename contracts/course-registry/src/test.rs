@@ -34,6 +34,30 @@ fn setup_with_course(env: &Env, client: &CourseRegistryClient) -> (Address, Addr
 // ── initialize ────────────────────────────────────────────────────────────────
 
 #[test]
+fn test_initialize_with_auth_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(CourseRegistry, ());
+    let client = CourseRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+
+    // Should succeed with auth mocked
+    client.initialize(&admin);
+}
+
+#[test]
+#[should_panic]
+fn test_initialize_without_auth_panics() {
+    let env = Env::default();
+    let contract_id = env.register(CourseRegistry, ());
+    let client = CourseRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+
+    // No mock_all_auths — require_auth should panic
+    client.initialize(&admin);
+}
+
+#[test]
 fn test_create_course_returns_id_one() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
