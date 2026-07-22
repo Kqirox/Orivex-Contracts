@@ -265,10 +265,13 @@ fn test_explore_quest_payout_drains_reward_pool_correctly() {
     );
 }
 
-// ── Test 4: Missing Wiring Causes Clear Failure ──────────────────────────────
+// ── Test 4: Missing Wiring Causes Failure (Recoverable) ──────────────────────
+// Without `add_approved_spender` on the reward pool, `complete_module`
+// must not panic. The reward-pool guard fires inside `try_distribute_reward`,
+// which the contract catches as `Err(())` and records a `PendingReward`
+// the learner can reclaim via `claim_completion_reward` once wiring is fixed.
 
 #[test]
-#[should_panic(expected = "Caller is not an authorized spender")]
 fn test_missing_wiring_causes_failure() {
     let env = Env::default();
     env.mock_all_auths();
@@ -307,11 +310,35 @@ fn test_missing_wiring_causes_failure() {
     course_registry_client.set_reward_pool_address(&admin, &reward_pool_client.address);
     course_registry_client.set_badge_nft_address(&admin, &badge_nft_client.address);
 
-    // Create and complete a course — should panic because CourseRegistry is not whitelisted
+    // Create and complete a course — must NOT panic. `try_distribute_reward`
+    // traps the reward-pool guard and records a pending reward instead.
     let course_id =
         course_registry_client.create_course(&admin, &instructor, &1, &dummy_hash(&env));
     course_registry_client.enroll(&learner, &course_id);
     course_registry_client.complete_module(&admin, &learner, &course_id);
+
+    // 1. Graceful degradation: no token transfer, but badge was still minted.
+    let token_sac = token::StellarAssetClient::new(&env, &token_address);
+    assert_eq!(token_sac.balance(&learner), 0);
+    assert_eq!(
+        token_sac.balance(&reward_pool_client.address),
+        1_000_000_000
+    );
+    assert!(badge_nft_client.has_badge(&learner, &course_id));
+    assert_eq!(badge_nft_client.get_badge_count(&learner), 1);
+
+    // 2. Pending reward is recoverable: wire the CourseRegistry as an
+    //    approved spender and have the learner claim the reward.
+    reward_pool_client.add_approved_spender(&admin, &course_registry_client.address);
+    course_registry_client.claim_completion_reward(&learner, &course_id);
+
+    // Claim succeeds → learner receives the base 10 USDC reward (7-decimal)
+    // and the pool is drained by exactly the same amount.
+    assert_eq!(token_sac.balance(&learner), 100_000_000);
+    assert_eq!(
+        token_sac.balance(&reward_pool_client.address),
+        1_000_000_000 - 100_000_000
+    );
 }
 
 // ── Test 5: Multiple Learners Complete Courses Independently ──────────────────
