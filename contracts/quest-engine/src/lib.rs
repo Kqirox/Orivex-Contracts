@@ -26,7 +26,8 @@ pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 // admin-verified and rewarded out of the RewardPool.
 
 pub mod types;
-use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
+pub use types::QuestType;
+use types::{DataKey, Quest, Submission, SubmissionStatus};
 
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
@@ -90,6 +91,18 @@ pub struct BatchReviewed {
 }
 
 #[contractevent]
+pub struct PayoutComputed {
+    #[topic]
+    pub learner: Address,
+    #[topic]
+    pub quest_id: u32,
+    pub fee: i128,
+    pub learner_amount: i128,
+    pub boost_actual: i128,
+    pub boost_capped: bool,
+}
+
+#[contractevent]
 pub struct ContractUpgraded {
     #[topic]
     pub admin: Address,
@@ -107,8 +120,38 @@ pub struct ExploreQuestVerified {
     pub amount: i128,
 }
 
+#[contractevent]
+pub struct RewardPoolUpdated {
+    #[topic]
+    pub admin: Address,
+    pub new_address: Address,
+}
+
+#[contractevent]
+pub struct StakeVaultUpdated {
+    #[topic]
+    pub admin: Address,
+    pub new_address: Address,
+}
+
 #[contract]
 pub struct QuestEngineContract;
+
+/// Computes the fee split and staking boost for a quest payout.
+///
+/// Returns `(fee, learner_amount, boost_actual, boost_capped)` where:
+/// - `fee`: platform fee (15% of `reward`).
+/// - `learner_amount`: actual tokens transferred to the learner.
+/// - `boost_actual`: the boosted amount before cap (`base * multiplier_bps / 100`).
+/// - `boost_capped`: true when the boost was truncated to the available balance.
+pub fn compute_learner_payout(reward: i128, multiplier_bps: u32) -> (i128, i128, i128, bool) {
+    let fee = (reward * PLATFORM_FEE_BASIS_POINTS as i128) / 10_000;
+    let base = reward - fee;
+    let boost_actual = (base * multiplier_bps as i128) / 100;
+    let capped = boost_actual > base;
+    let learner_amount = if capped { base } else { boost_actual };
+    (fee, learner_amount, boost_actual, capped)
+}
 
 #[contractimpl]
 impl QuestEngineContract {
@@ -167,6 +210,46 @@ impl QuestEngineContract {
 
         // 4. Store pause status in Instance storage
         env.storage().instance().set(&DataKey::IsPaused, &status);
+    }
+
+    /// Updates the RewardPool address used for explore-quest payouts.
+    /// Admin-only. Emits `RewardPoolUpdated` with the new address.
+    pub fn set_reward_pool_address(env: Env, admin: Address, new_address: Address) {
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::RewardPool, &new_address);
+
+        RewardPoolUpdated { admin, new_address }.publish(&env);
+    }
+
+    /// Updates the StakeVault address used for multiplier lookups.
+    /// Admin-only. Emits `StakeVaultUpdated` with the new address.
+    pub fn set_stake_vault_address(env: Env, admin: Address, new_address: Address) {
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::StakeVault, &new_address);
+
+        StakeVaultUpdated { admin, new_address }.publish(&env);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
@@ -421,9 +504,6 @@ impl QuestEngineContract {
                 .expect("Not initialized");
             let token_client = token::Client::new(&env, &token_address);
 
-            let fee = (quest.reward_amount * 15) / 100;
-            let base_learner_amount = quest.reward_amount - fee;
-
             // Fetch stake vault and get multiplier
             let stake_vault_address: Address = env
                 .storage()
@@ -433,17 +513,8 @@ impl QuestEngineContract {
             let stake_vault_client = StakeVaultClient::new(&env, &stake_vault_address);
             let multiplier = stake_vault_client.get_multiplier(&learner);
 
-            // Apply multiplier (basis points: 100 = 1.0x, 120 = 1.2x, etc.)
-            // Note: The boosted amount is calculated but capped to base_learner_amount
-            // since the quest only has base_learner_amount available after fees.
-            // In production, employers should fund quests accounting for potential multipliers,
-            // or the boost should come from a separate reward pool contract with proper authorization.
-            let calculated_boost = (base_learner_amount * multiplier as i128) / 100;
-            let learner_amount = if calculated_boost > base_learner_amount {
-                base_learner_amount // Cap to available funds
-            } else {
-                calculated_boost
-            };
+            let (fee, learner_amount, boost_actual, boost_capped) =
+                compute_learner_payout(quest.reward_amount, multiplier);
 
             let reward_pool: Address = env
                 .storage()
@@ -453,6 +524,18 @@ impl QuestEngineContract {
 
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
             token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
+
+            if boost_capped {
+                PayoutComputed {
+                    learner: learner.clone(),
+                    quest_id,
+                    fee,
+                    learner_amount,
+                    boost_actual,
+                    boost_capped,
+                }
+                .publish(&env);
+            }
 
             submission.status = SubmissionStatus::Approved;
         } else {
@@ -578,11 +661,31 @@ impl QuestEngineContract {
                 panic!("Submission is not pending review");
             }
 
-            let fee = (quest.reward_amount * 15) / 100;
-            let learner_amount = quest.reward_amount - fee;
+            let stake_vault_address: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::StakeVault)
+                .expect("Not initialized");
+            let stake_vault_client = StakeVaultClient::new(&env, &stake_vault_address);
+            let multiplier = stake_vault_client.get_multiplier(&learner);
+
+            let (fee, learner_amount, boost_actual, boost_capped) =
+                compute_learner_payout(quest.reward_amount, multiplier);
 
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
             token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
+
+            if boost_capped {
+                PayoutComputed {
+                    learner: learner.clone(),
+                    quest_id,
+                    fee,
+                    learner_amount,
+                    boost_actual,
+                    boost_capped,
+                }
+                .publish(&env);
+            }
 
             submission.status = SubmissionStatus::Approved;
             env.storage().persistent().set(&submission_key, &submission);

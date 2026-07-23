@@ -1,0 +1,27 @@
+[package]
+name = "integration-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-contract integration tests for the Orivex platform"
+
+[lib]
+crate-type = ["lib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+course-registry = { path = "../course-registry", default-features = false }
+badge-nft = { path = "../badge-nft", default-features = false }
+reward-pool = { path = "../reward-pool", default-features = false }
+quest-engine = { path = "../quest-engine", default-features = false }
+stake-vault = { path = "../stake-vault", default-features = false }
+governance = { path = "../governance", default-features = false }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+course-registry = { path = "../course-registry", features = ["testutils"] }
+badge-nft = { path = "../badge-nft", features = ["testutils"] }
+reward-pool = { path = "../reward-pool", features = ["testutils"] }
+quest-engine = { path = "../quest-engine", features = ["testutils"] }
+stake-vault = { path = "../stake-vault", features = ["testutils"] }
+governance = { path = "../governance", features = ["testutils"] }
