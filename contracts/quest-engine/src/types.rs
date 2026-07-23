@@ -76,8 +76,8 @@ pub const MAX_REASON_LEN: u32 = 256;
 pub enum DataKey {
     Admin,
     Quest(u32),
-    Submission(Address, u32),         // Build-quest (submitter, quest_id)
-    ExploreSubmission(Address, u32),  // Explore-quest (learner, quest_id)
+    Submission(Address, u32),        // Build-quest (submitter, quest_id)
+    ExploreSubmission(Address, u32), // Explore-quest (learner, quest_id)
     Token,
     QuestCounter,
     RewardPool,

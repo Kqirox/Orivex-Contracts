@@ -1231,7 +1231,12 @@ fn setup_with_mock_reward_pool() -> (
     let mock_stake_vault_id = env.register(MockStakeVault, ());
     let admin = Address::generate(&env);
 
-    client.initialize(&admin, &token_id, &mock_reward_pool_id, &mock_stake_vault_id);
+    client.initialize(
+        &admin,
+        &token_id,
+        &mock_reward_pool_id,
+        &mock_stake_vault_id,
+    );
     (env, client, token_id, admin)
 }
 
@@ -1353,11 +1358,17 @@ fn test_verify_explore_quest_full_lifecycle() {
 
     // Step 1: learner submits proof — ExploreProofSubmitted event emitted
     client.submit_explore_proof(&learner, &quest_id, &proof_hash);
-    assert!(!env.events().all().is_empty(), "ExploreProofSubmitted not emitted");
+    assert!(
+        !env.events().all().is_empty(),
+        "ExploreProofSubmitted not emitted"
+    );
 
     // Step 2: admin verifies — ExploreQuestVerified event emitted
     client.verify_explore_quest(&admin, &learner, &quest_id);
-    assert!(!env.events().all().is_empty(), "ExploreQuestVerified not emitted");
+    assert!(
+        !env.events().all().is_empty(),
+        "ExploreQuestVerified not emitted"
+    );
 
     // Submission status is now Verified
     let sub = client.get_explore_submission(&learner, &quest_id).unwrap();
@@ -1519,13 +1530,19 @@ fn test_full_explore_lifecycle_rejection_path() {
 
     // Learner logs intent — ExploreProofSubmitted event
     client.submit_explore_proof(&learner, &quest_id, &proof_hash);
-    assert!(!env.events().all().is_empty(), "ExploreProofSubmitted not emitted");
+    assert!(
+        !env.events().all().is_empty(),
+        "ExploreProofSubmitted not emitted"
+    );
     let sub = client.get_explore_submission(&learner, &quest_id).unwrap();
     assert_eq!(sub.status, crate::types::ExploreSubmissionStatus::Pending);
 
     // Admin rejects — ExploreSubmissionRejected event
     client.reject_explore_quest(&admin, &learner, &quest_id, &reason);
-    assert!(!env.events().all().is_empty(), "ExploreSubmissionRejected not emitted");
+    assert!(
+        !env.events().all().is_empty(),
+        "ExploreSubmissionRejected not emitted"
+    );
     let sub = client.get_explore_submission(&learner, &quest_id).unwrap();
     assert_eq!(sub.status, crate::types::ExploreSubmissionStatus::Rejected);
 }

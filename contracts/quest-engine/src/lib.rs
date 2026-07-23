@@ -33,8 +33,7 @@ use types::{
 };
 
 use soroban_sdk::{
-    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, String,
-    Vec,
+    contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, String, Vec,
 };
 
 #[contractclient(name = "StakeVaultClient")]
@@ -918,12 +917,7 @@ impl QuestEngineContract {
     ///
     /// # Events
     /// Emits `ExploreProofSubmitted` on success.
-    pub fn submit_explore_proof(
-        env: Env,
-        learner: Address,
-        quest_id: u32,
-        proof_hash: BytesN<32>,
-    ) {
+    pub fn submit_explore_proof(env: Env, learner: Address, quest_id: u32, proof_hash: BytesN<32>) {
         // 1. learner.require_auth()
         learner.require_auth();
 
