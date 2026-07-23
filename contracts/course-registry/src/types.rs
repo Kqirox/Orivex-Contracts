@@ -34,4 +34,8 @@ pub enum DataKey {
     /// whose reward payout failed. The learner can call
     /// `claim_completion_reward` to retry.
     PendingReward(Address, u32),
+    /// Monotonically increasing schema version stored in instance storage.
+    /// 0  = pre-versioning (no Version key present).
+    /// 1  = current schema (this build).
+    Version,
 }

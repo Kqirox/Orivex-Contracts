@@ -2,6 +2,11 @@
 
 use contracts_common::errors::ContractError;
 
+/// Schema version stored in instance storage.
+///   0 – pre-versioning baseline (no Version key in storage)
+///   1 – initial versioned schema; Course struct unchanged from v0
+pub const VERSION: u32 = 1;
+
 pub const INITIAL_COURSE_ID: u32 = 1;
 
 pub const MAX_COURSE_ID: u32 = u32::MAX;
