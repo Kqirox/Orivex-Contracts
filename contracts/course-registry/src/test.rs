@@ -2,11 +2,13 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    Address, BytesN, Env,
+    token, Address, BytesN, Env,
 };
 
-use crate::{CourseRegistry, CourseRegistryClient, DataKey};
+use crate::{CourseRegistry, CourseRegistryClient, DataKey, BASE_REWARD_AMOUNT};
 use badge_nft::{BadgeNFT, BadgeNFTClient};
+use governance::{DataKey as GovernanceDataKey, Governance, GovernanceClient, Proposal};
+use reward_pool::{RewardPool, RewardPoolClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -928,9 +930,6 @@ fn test_transfer_ownership_updates_instructor_field() {
 
 // ── Reward payout on course completion (Issue #53) ────────────────────────────
 
-use reward_pool::{RewardPool, RewardPoolClient};
-use soroban_sdk::token;
-
 /// Deploys + initializes a RewardPool backed by a real SAC token.
 /// Returns (reward_pool_client, token_admin, token_sac_client, token_address).
 fn setup_reward_pool<'a>(
@@ -990,7 +989,7 @@ fn test_complete_course_triggers_reward_distribution() {
     assert!(!all_events.is_empty());
 
     assert!(badge_client.has_badge(&learner, &course_id));
-    assert_eq!(token_sac.balance(&learner), 10_0000000); // 10 USDC
+    assert_eq!(token_sac.balance(&learner), BASE_REWARD_AMOUNT); // 10 USDC
 }
 
 /// Test 2 – Reward NOT distributed when CourseRegistry is not whitelisted.
@@ -1070,16 +1069,16 @@ fn test_multiple_learners_get_independent_rewards() {
 
     // Learner A completes the course
     client.complete_module(&admin, &learner_a, &course_id);
-    assert_eq!(token_sac.balance(&learner_a), 10_0000000);
+    assert_eq!(token_sac.balance(&learner_a), BASE_REWARD_AMOUNT);
 
     // Learner B completes the course
     client.complete_module(&admin, &learner_b, &course_id);
-    assert_eq!(token_sac.balance(&learner_b), 10_0000000);
+    assert_eq!(token_sac.balance(&learner_b), BASE_REWARD_AMOUNT);
 
     // Pool balance decreased by 2 × 10 USDC
     assert_eq!(
         token_sac.balance(&reward_pool_client.address),
-        1_000_000_000 - 2 * 10_0000000
+        1_000_000_000 - 2 * BASE_REWARD_AMOUNT
     );
 }
 
@@ -1110,7 +1109,70 @@ fn test_reward_distributed_only_on_final_module() {
 
     // Module 3 (final) — reward paid out
     client.complete_module(&admin, &learner, &course_id);
-    assert_eq!(token_sac.balance(&learner), 10_0000000);
+    assert_eq!(token_sac.balance(&learner), BASE_REWARD_AMOUNT);
+}
+
+fn seed_governance_proposal(
+    env: &Env,
+    governance_client: &GovernanceClient<'_>,
+    proposal_id: u32,
+    proposer: &Address,
+) {
+    env.as_contract(&governance_client.address, || {
+        env.storage().persistent().set(
+            &GovernanceDataKey::Proposal(proposal_id),
+            &Proposal {
+                id: proposal_id,
+                proposer: proposer.clone(),
+                metadata_hash: dummy_hash(env),
+                votes_for: 0,
+                votes_against: 0,
+                end_time: 1_000,
+                executed: false,
+            },
+        );
+    });
+}
+
+#[test]
+fn test_full_learner_journey_mints_badge_pays_reward_and_weights_governance_vote() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let proposer = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+
+    let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
+    token_sac.mint(&reward_pool_client.address, &1_000_000_000);
+    reward_pool_client.add_approved_spender(&admin, &client.address);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    let badge_client = setup_badge_nft(&env, &client.address);
+    client.set_badge_nft_address(&admin, &badge_client.address);
+
+    let governance_id = env.register(Governance, ());
+    let governance_client = GovernanceClient::new(&env, &governance_id);
+    governance_client.initialize(&admin, &badge_client.address);
+    seed_governance_proposal(&env, &governance_client, 1, &proposer);
+
+    client.enroll(&learner, &course_id);
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(client.get_progress(&learner, &course_id), 1);
+    assert!(!badge_client.has_badge(&learner, &course_id));
+    assert_eq!(token_sac.balance(&learner), 0);
+
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(client.get_progress(&learner, &course_id), 2);
+    assert!(badge_client.has_badge(&learner, &course_id));
+    assert_eq!(token_sac.balance(&learner), BASE_REWARD_AMOUNT);
+
+    governance_client.cast_vote(&learner, &1, &true);
+    let proposal = governance_client.get_proposal(&1);
+    assert_eq!(proposal.votes_for, 1);
+    assert_eq!(proposal.votes_against, 0);
 }
 
 // ── Storage versioning & migrations ──────────────────────────────────────────
