@@ -418,3 +418,72 @@ fn test_upgrade_contract_not_initialized_panics() {
     let new_wasm_hash = BytesN::from_array(&env, &[0xabu8; 32]);
     governance_client.upgrade_contract(&attacker, &new_wasm_hash);
 }
+
+// ── Storage versioning & migrations ──────────────────────────────────────────
+
+/// A freshly deployed contract reports version 0 (no Version key set yet).
+#[test]
+fn test_governance_contract_version_initial_zero() {
+    let (_env, gov, badge, admin) = setup();
+    badge.initialize(&admin);
+    gov.initialize(&admin, &badge.address);
+
+    assert_eq!(gov.contract_version(), 0);
+}
+
+/// After `migrate()` the stored version equals the compiled VERSION constant.
+#[test]
+fn test_governance_migrate_v0_to_v1_sets_version() {
+    let (_env, gov, badge, admin) = setup();
+    badge.initialize(&admin);
+    gov.initialize(&admin, &badge.address);
+
+    assert_eq!(gov.contract_version(), 0);
+    gov.migrate(&admin);
+    assert_eq!(gov.contract_version(), crate::VERSION);
+}
+
+/// `migrate()` called twice panics with "Already at current version".
+#[test]
+#[should_panic(expected = "Already at current version")]
+fn test_governance_migrate_twice_panics() {
+    let (_env, gov, badge, admin) = setup();
+    badge.initialize(&admin);
+    gov.initialize(&admin, &badge.address);
+
+    gov.migrate(&admin);
+    gov.migrate(&admin);
+}
+
+/// Non-admin cannot call `migrate()`.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_governance_migrate_unauthorized_panics() {
+    let (env, gov, badge, admin) = setup();
+    let attacker = Address::generate(&env);
+    badge.initialize(&admin);
+    gov.initialize(&admin, &badge.address);
+
+    gov.migrate(&attacker);
+}
+
+/// Proposal records written before migration are intact afterwards (v0 → v1).
+#[test]
+fn test_governance_migrate_v0_to_v1_preserves_proposals() {
+    let (env, gov, badge, admin) = setup();
+    badge.initialize(&admin);
+    gov.initialize(&admin, &badge.address);
+
+    let proposer = Address::generate(&env);
+    seed_proposal(&env, &gov, 1, &proposer);
+    let proposal_before = gov.get_proposal(&1u32);
+
+    assert_eq!(gov.contract_version(), 0);
+    gov.migrate(&admin);
+    assert_eq!(gov.contract_version(), crate::VERSION);
+
+    let proposal_after = gov.get_proposal(&1u32);
+    assert_eq!(proposal_before.proposer, proposal_after.proposer);
+    assert_eq!(proposal_before.metadata_hash, proposal_after.metadata_hash);
+    assert_eq!(proposal_before.executed, proposal_after.executed);
+}

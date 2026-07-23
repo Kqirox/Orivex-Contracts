@@ -548,3 +548,74 @@ fn test_emergency_sweep_large_balance() {
     assert_eq!(token_client.balance(&client.address), 0);
     assert_eq!(token_client.balance(&recovery_wallet), 1_000_000);
 }
+
+// ── Storage versioning & migrations ──────────────────────────────────────────
+
+/// A freshly deployed contract reports version 0 (no Version key set yet).
+#[test]
+fn test_reward_pool_contract_version_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    client.initialize(&admin, &token);
+
+    assert_eq!(client.contract_version(), 0);
+}
+
+/// After `migrate()` the stored version equals the compiled VERSION constant.
+#[test]
+fn test_reward_pool_migrate_v0_to_v1_sets_version() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    client.initialize(&admin, &token);
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+}
+
+/// `migrate()` called twice panics with "Already at current version".
+#[test]
+#[should_panic(expected = "Already at current version")]
+fn test_reward_pool_migrate_twice_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    client.initialize(&admin, &token);
+
+    client.migrate(&admin);
+    client.migrate(&admin);
+}
+
+/// Non-admin cannot call `migrate()`.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_reward_pool_migrate_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let token = Address::generate(&env);
+    client.initialize(&admin, &token);
+
+    client.migrate(&attacker);
+}
+
+/// Approved spender entries survive migration (v0 → v1).
+#[test]
+fn test_reward_pool_migrate_v0_to_v1_preserves_spender_count() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let spender = Address::generate(&env);
+    client.initialize(&admin, &token);
+    client.add_approved_spender(&admin, &spender);
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+
+    // The spender entry must still be present — distribute_reward would panic
+    // otherwise (tested indirectly via estimated_storage_footprint).
+    assert_eq!(client.estimated_storage_footprint(), 1);
+}

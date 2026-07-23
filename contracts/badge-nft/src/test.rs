@@ -448,3 +448,72 @@ fn test_has_badge_multiple_badges() {
     assert!(!client.has_badge(&learner, &4));
     assert!(client.has_badge(&learner, &5));
 }
+
+// ── Storage versioning & migrations ──────────────────────────────────────────
+
+/// A freshly deployed contract reports version 0 (no Version key set yet).
+#[test]
+fn test_badge_contract_version_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    assert_eq!(client.contract_version(), 0);
+}
+
+/// After `migrate()` the stored version equals the compiled VERSION constant.
+#[test]
+fn test_badge_migrate_v0_to_v1_sets_version() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+}
+
+/// `migrate()` called twice panics with "Already at current version".
+#[test]
+#[should_panic(expected = "Already at current version")]
+fn test_badge_migrate_twice_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.migrate(&admin);
+    client.migrate(&admin);
+}
+
+/// Non-admin cannot call `migrate()`.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_badge_migrate_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    client.initialize(&admin);
+
+    client.migrate(&attacker);
+}
+
+/// Migration preserves existing badge records (v0 → v1 compatibility).
+#[test]
+fn test_badge_migrate_v0_to_v1_preserves_badges() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.mint_badge(&admin, &learner, &42u32);
+
+    assert!(client.has_badge(&learner, &42u32));
+    assert_eq!(client.contract_version(), 0);
+
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+
+    // Badges must still be readable after migration.
+    assert!(client.has_badge(&learner, &42u32));
+    assert_eq!(client.get_badge_count(&learner), 1);
+}

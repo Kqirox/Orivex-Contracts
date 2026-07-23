@@ -7,3 +7,6 @@ Cargo.lock
 # Local settings
 .soroban
 .stellar
+
+# Soroban test ledger snapshots (auto-generated, not for review)
+test_snapshots/

@@ -1,5 +1,14 @@
 #![no_std]
 
+/// Current storage schema version for this contract.
+/// Increment this constant when making breaking changes to stored structs or
+/// DataKey variants, and add the corresponding migration step in `migrate()`.
+///
+/// Version history:
+///   0 – pre-versioning baseline (no Version key in storage)
+///   1 – initial versioned schema; Quest and Submission structs unchanged from v0
+pub const VERSION: u32 = 1;
+
 pub const BUILD_QUEST_PREFIX: &str = "build";
 
 pub const EXPLORE_QUEST_PREFIX: &str = "explore";
@@ -701,6 +710,10 @@ impl QuestEngineContract {
     }
 
     /// Upgrades the contract WASM. Only callable by the Protocol Admin.
+    ///
+    /// After swapping the WASM, the caller **must** invoke `migrate()` in a
+    /// subsequent transaction so that any storage-schema changes are applied
+    /// before regular contract functions are used.
     pub fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
         admin.require_auth();
 
@@ -719,6 +732,50 @@ impl QuestEngineContract {
             new_wasm_hash,
         }
         .publish(&env);
+    }
+
+    /// Applies any pending storage-schema migrations for the current WASM version.
+    ///
+    /// Must be called by the admin in the first transaction after `upgrade_contract`.
+    ///
+    /// # Version transition table
+    /// | from | to | changes |
+    /// |------|-----|---------|
+    /// | 0    |  1  | Writes initial `Version = 1` marker; no struct changes |
+    ///
+    /// # Panics
+    /// * If the caller is not the Protocol Admin.
+    /// * If the on-chain version is already equal to or greater than `VERSION`.
+    pub fn migrate(env: Env, admin: Address) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
+
+        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
+
+        assert!(current_version < VERSION, "Already at current version");
+
+        // ── v0 → v1 ──────────────────────────────────────────────────────────
+        // Quest and Submission structs are wire-compatible between v0 and v1.
+        // A future migration adding fields would iterate QuestCount IDs and
+        // rewrite each Quest(id) here.
+        if current_version < 1 {
+            // No data transformation required.
+        }
+
+        // ── write new version ─────────────────────────────────────────────────
+        env.storage().instance().set(&DataKey::Version, &VERSION);
+    }
+
+    /// Returns the schema version currently stored in instance storage.
+    /// Returns 0 when the contract was deployed before versioning was introduced.
+    pub fn contract_version(env: Env) -> u32 {
+        env.storage().instance().get(&DataKey::Version).unwrap_or(0)
     }
 
     /// Verifies an Explore Quest completion and triggers payout from RewardPool.

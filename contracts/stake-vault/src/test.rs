@@ -205,3 +205,78 @@ fn test_get_multiplier() {
     });
     assert_eq!(client.get_multiplier(&user), 200);
 }
+
+// ── Storage versioning & migrations ──────────────────────────────────────────
+
+/// A freshly deployed contract reports version 0 (no Version key set yet).
+#[test]
+fn test_stake_vault_contract_version_initial_zero() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    client.initialize(&admin, &token_id.address());
+
+    assert_eq!(client.contract_version(), 0);
+}
+
+/// After `migrate()` the stored version equals the compiled VERSION constant.
+#[test]
+fn test_stake_vault_migrate_v0_to_v1_sets_version() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    client.initialize(&admin, &token_id.address());
+
+    assert_eq!(client.contract_version(), 0);
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+}
+
+/// `migrate()` called twice panics with "Already at current version".
+#[test]
+#[should_panic(expected = "Already at current version")]
+fn test_stake_vault_migrate_twice_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    client.initialize(&admin, &token_id.address());
+
+    client.migrate(&admin);
+    client.migrate(&admin);
+}
+
+/// Non-admin cannot call `migrate()`.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_stake_vault_migrate_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    client.initialize(&admin, &token_id.address());
+
+    client.migrate(&attacker);
+}
+
+/// Stake records written before migration are intact afterwards (v0 → v1).
+#[test]
+fn test_stake_vault_migrate_v0_to_v1_preserves_stakes() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    client.initialize(&admin, &token_id.address());
+    token_client.mint(&user, &500);
+    client.stake(&user, &200i128);
+
+    let multiplier_before = client.get_multiplier(&user);
+    assert_eq!(client.contract_version(), 0);
+
+    client.migrate(&admin);
+    assert_eq!(client.contract_version(), crate::VERSION);
+
+    // Stake data must be intact — multiplier depends on stored amount.
+    assert_eq!(client.get_multiplier(&user), multiplier_before);
+}
