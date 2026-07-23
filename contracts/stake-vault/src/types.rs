@@ -13,4 +13,6 @@ pub enum DataKey {
     Admin,
     Token,
     UserStake(Address),
+    /// Pending two-step admin transfer (Issue #20).
+    PendingAdmin,
 }

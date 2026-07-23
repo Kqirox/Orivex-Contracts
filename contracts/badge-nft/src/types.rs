@@ -12,4 +12,6 @@ pub struct Badge {
 pub enum DataKey {
     Admin,
     UserBadges(Address),
+    /// Pending two-step admin transfer (Issue #20).
+    PendingAdmin,
 }

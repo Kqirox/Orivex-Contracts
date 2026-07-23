@@ -143,3 +143,27 @@ cargo test -p course-registry --lib
 - Add course deletion with proper cleanup
 - Support for multiple admin roles
 - Course versioning for content updates
+
+## Two-Step Admin & Wiring Transfer (Issue #20)
+
+`Admin`, `RewardPoolAddress`, and `BadgeNftAddress` are all rotated
+through `propose → accept`. The single-step setters
+(`set_reward_pool_address`, `set_badge_nft_address`) remain in place
+for the initial wiring at deploy time; later rotations must go through
+the two-step flow.
+
+| Role | Propose | Accept | Cancel |
+| ---- | ------- | ------ | ------ |
+| Admin | `propose_new_admin(current_admin, proposed)` | `accept_admin_ownership(acceptor)` | `cancel_admin_transfer(caller)` |
+| RewardPoolAddress | `propose_new_reward_pool_address(current_admin, proposed)` | `accept_reward_pool_address(acceptor)` | `cancel_reward_pool_transfer(caller)` |
+| BadgeNftAddress | `propose_new_badge_nft_address(current_admin, proposed)` | `accept_badge_nft_address(acceptor)` | `cancel_badge_nft_transfer(caller)` |
+
+The cancel step is callable by the *current* admin **or** the
+(possibly typo'd) proposed address, so a fat-finger incident is
+recoverable without the original admin even needing to re-issue.
+
+Timelock mode is **soft**: the proposed address may accept
+immediately. Off-chain monitors should subscribe to events
+`TransferProposed { current, proposed, proposed_at }`,
+`TransferAccepted { new_value }`, and `TransferCancelled { cancelled_by, was_proposed }`
+(in `contracts/common::two_step`).

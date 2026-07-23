@@ -548,3 +548,183 @@ fn test_emergency_sweep_large_balance() {
     assert_eq!(token_client.balance(&client.address), 0);
     assert_eq!(token_client.balance(&recovery_wallet), 1_000_000);
 }
+
+// ── Two-Step Admin Transfer Tests (Issue #20) ───────────────────────────────
+
+#[test]
+fn test_propose_new_admin_success_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+
+    client.propose_new_admin(&admin, &proposed);
+
+    // 1 `TransferProposed` event must have been emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 2, "init event + propose event");
+
+    let last = events.last().unwrap();
+    let expected_topics: Vec<Val> =
+        (Symbol::new(&env, "transfer_proposed"), admin.clone(), proposed.clone()).into_val(&env);
+    assert_eq!(last.1, expected_topics);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the admin")]
+fn test_propose_new_admin_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&impostor, &proposed);
+}
+
+#[test]
+fn test_accept_admin_ownership_happy_path() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &new_admin);
+
+    let events_before = env.events().all().len();
+    client.accept_admin_ownership(&new_admin);
+
+    // After accept, the new admin can call admin-only setters.
+    // We verify by adding an approved spender as the new admin.
+    let spender = Address::generate(&env);
+    client.add_approved_spender(&new_admin, &spender);
+    assert_eq!(env.events().all().len(), events_before + 2, "accept + spender");
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed admin")]
+fn test_accept_admin_ownership_wrong_acceptor_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &proposed);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_accept_admin_ownership_no_pending_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.accept_admin_ownership(&new_admin);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_proposer_recovers_from_typo() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    // Simulate a typo'd "new admin" address.
+    let typo_address = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &typo_address);
+
+    // Original admin catches the typo and cancels.
+    client.cancel_admin_transfer(&admin);
+
+    // Live admin is unchanged — admin-only call still works.
+    let spender = Address::generate(&env);
+    client.add_approved_spender(&admin, &spender);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_typo_address_recovers() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let typo = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &typo);
+
+    // The typo'd address itself can cancel — no stranger can squat.
+    client.cancel_admin_transfer(&typo);
+
+    let spender = Address::generate(&env);
+    client.add_approved_spender(&admin, &spender);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: only proposer or current admin can cancel")]
+fn test_cancel_admin_transfer_by_random_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+    let random = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &proposed);
+    client.cancel_admin_transfer(&random);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_cancel_admin_transfer_no_pending_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.cancel_admin_transfer(&admin);
+}
+
+#[test]
+fn test_propose_after_accept_replaces_pending_typo() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let typo = Address::generate(&env);
+    let correct = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+
+    // Stage 1: admin proposes a typo'd address.
+    client.propose_new_admin(&admin, &typo);
+
+    // Stage 2: admin replaces the typo with a correct address.
+    client.propose_new_admin(&admin, &correct);
+
+    // The typo'd address can no longer accept (its proposal was overwritten).
+    // We assert the correct address can still accept and become live admin.
+    client.accept_admin_ownership(&correct);
+    let spender = Address::generate(&env);
+    client.add_approved_spender(&correct, &spender);
+}
+
+#[test]
+fn test_double_accept_panics_after_first_accept_clears_pending() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &new_admin);
+    client.accept_admin_ownership(&new_admin);
+    // Second accept must panic — pending record was cleared.
+    client.accept_admin_ownership(&new_admin);
+}

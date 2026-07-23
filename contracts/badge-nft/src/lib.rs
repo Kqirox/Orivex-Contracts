@@ -28,6 +28,11 @@ pub trait BadgeNFTInterface {
     fn get_badges(env: Env, learner: Address) -> Vec<Badge>;
     fn get_badge_count(env: Env, learner: Address) -> u32;
     fn has_badge(env: Env, learner: Address, course_id: u32) -> bool;
+    fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: soroban_sdk::BytesN<32>);
+    // ── Two-step admin transfer (Issue #20) ─────────────────────
+    fn propose_new_admin(env: Env, current_admin: Address, proposed: Address);
+    fn accept_admin_ownership(env: Env, acceptor: Address);
+    fn cancel_admin_transfer(env: Env, caller: Address);
 }
 
 #[contractevent]
@@ -59,6 +64,9 @@ pub struct ContractUpgraded {
 // to avoid duplicate symbol errors at link time.
 #[cfg(feature = "contract")]
 mod contract_impl {
+    use contracts_common::two_step::{
+        PendingTransfer, TransferAccepted, TransferCancelled, TransferProposed,
+    };
     use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 
     use crate::types::{Badge, DataKey};
@@ -270,6 +278,95 @@ mod contract_impl {
             ContractUpgraded {
                 admin,
                 new_wasm_hash,
+            }
+            .publish(&env);
+        }
+
+        // ── Two-step admin transfer (Issue #20) ──────────────────
+
+        /// Stage 1 — propose a new admin. Only the current admin may call.
+        pub fn propose_new_admin(
+            env: Env,
+            current_admin: Address,
+            proposed: Address,
+        ) {
+            current_admin.require_auth();
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Contract not initialized");
+            assert!(
+                current_admin == stored_admin,
+                "Unauthorized: Caller is not the authorized registry"
+            );
+
+            let proposed_at = env.ledger().timestamp();
+            env.storage().persistent().set(
+                &DataKey::PendingAdmin,
+                &PendingTransfer {
+                    proposed: proposed.clone(),
+                    proposed_at,
+                },
+            );
+
+            TransferProposed {
+                current: current_admin,
+                proposed,
+                proposed_at,
+            }
+            .publish(&env);
+        }
+
+        /// Stage 2 — accept the admin role. Only the proposed address may call.
+        pub fn accept_admin_ownership(env: Env, acceptor: Address) {
+            acceptor.require_auth();
+
+            let pending: PendingTransfer = env
+                .storage()
+                .persistent()
+                .get(&DataKey::PendingAdmin)
+                .expect("No pending admin transfer");
+
+            assert!(
+                acceptor == pending.proposed,
+                "Unauthorized: Acceptor is not the proposed admin"
+            );
+
+            let new_admin = pending.proposed.clone();
+            env.storage().instance().set(&DataKey::Admin, &new_admin);
+            env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+            TransferAccepted { new_value: new_admin }.publish(&env);
+        }
+
+        /// Cancel a pending admin transfer. Callable by the proposed
+        /// address or the current admin.
+        pub fn cancel_admin_transfer(env: Env, caller: Address) {
+            caller.require_auth();
+
+            let pending: PendingTransfer = env
+                .storage()
+                .persistent()
+                .get(&DataKey::PendingAdmin)
+                .expect("No pending admin transfer");
+
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Contract not initialized");
+
+            assert!(
+                caller == pending.proposed || caller == stored_admin,
+                "Unauthorized: only proposer or current admin can cancel"
+            );
+
+            env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+            TransferCancelled {
+                cancelled_by: caller,
+                was_proposed: pending.proposed,
             }
             .publish(&env);
         }

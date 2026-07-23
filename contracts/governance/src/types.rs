@@ -18,4 +18,9 @@ pub enum DataKey {
     Proposal(u32),
     UserVote(Address, u32),
     Admin,
+    // ── Two-step transfer slots (Issue #20) ────────────────
+    /// Pending Admin transfer.
+    PendingAdmin,
+    /// Pending BadgeContractAddress transfer.
+    PendingBadgeContract,
 }

@@ -22,4 +22,11 @@ pub enum DataKey {
     /// whose reward payout failed. The learner can call
     /// `claim_completion_reward` to retry.
     PendingReward(Address, u32),
+    // ── Two-step transfer slots (Issue #20) ───────────────────
+    /// Pending Admin transfer.
+    PendingAdmin,
+    /// Pending RewardPoolAddress transfer.
+    PendingRewardPool,
+    /// Pending BadgeNftAddress transfer.
+    PendingBadgeNft,
 }

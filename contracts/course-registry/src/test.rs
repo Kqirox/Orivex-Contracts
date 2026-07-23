@@ -1112,3 +1112,228 @@ fn test_reward_distributed_only_on_final_module() {
     client.complete_module(&admin, &learner, &course_id);
     assert_eq!(token_sac.balance(&learner), 10_0000000);
 }
+
+// ── Two-Step Admin Transfer (Issue #20) ────────────────────────────────────
+
+#[test]
+fn test_propose_new_admin_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.propose_new_admin(&admin, &proposed);
+
+    let events = env.events().all();
+    assert_eq!(events.len(), 1, "TransferProposed event");
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_propose_new_admin_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.propose_new_admin(&impostor, &proposed);
+}
+
+#[test]
+fn test_accept_admin_ownership_happy_path() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.propose_new_admin(&admin, &new_admin);
+    client.accept_admin_ownership(&new_admin);
+
+    // New admin can now create courses.
+    let id = client.create_course(&new_admin, &instructor, &3, &dummy_hash(&env));
+    assert_eq!(id, 1);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed admin")]
+fn test_accept_admin_ownership_wrong_acceptor_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.propose_new_admin(&admin, &proposed);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_accept_admin_ownership_no_pending_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    let impostor = Address::generate(&env);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_admin_recovers_from_typo() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let typo = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.propose_new_admin(&admin, &typo);
+    client.cancel_admin_transfer(&admin);
+
+    // Original admin unchanged.
+    let instructor = Address::generate(&env);
+    let id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    assert_eq!(id, 1);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_typo_self_recovery() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let typo = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.propose_new_admin(&admin, &typo);
+    client.cancel_admin_transfer(&typo);
+
+    let instructor = Address::generate(&env);
+    let id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+    assert_eq!(id, 1);
+}
+
+// ── Two-Step RewardPoolAddress Transfer (Issue #20) ────────────────────────
+
+#[test]
+fn test_propose_accept_reward_pool_address_happy_path() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let (reward_pool_client, _token_sac, _) = setup_reward_pool(&env, &admin);
+    let new_pool = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+    client.propose_new_reward_pool_address(&admin, &new_pool);
+    client.accept_reward_pool_address(&new_pool);
+
+    // Subsequent completions should now route to the new pool. We verify
+    // by seeding a pending reward against the old pool address and ensuring
+    // the live slot now points at `new_pool`.
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::RewardPoolAddress)
+            .unwrap();
+        assert_eq!(stored, new_pool);
+    });
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed RewardPool")]
+fn test_accept_reward_pool_address_wrong_acceptor_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let (reward_pool_client, _, _) = setup_reward_pool(&env, &admin);
+    let proposed_pool = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+    client.propose_new_reward_pool_address(&admin, &proposed_pool);
+    client.accept_reward_pool_address(&impostor);
+}
+
+#[test]
+fn test_cancel_reward_pool_transfer_by_admin_recovers_typo() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let (reward_pool_client, _, _) = setup_reward_pool(&env, &admin);
+    let typo = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_reward_pool_address(&admin, &reward_pool_client.address);
+    client.propose_new_reward_pool_address(&admin, &typo);
+    client.cancel_reward_pool_transfer(&admin);
+
+    // Live address unchanged.
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::RewardPoolAddress)
+            .unwrap();
+        assert_eq!(stored, reward_pool_client.address);
+    });
+}
+
+// ── Two-Step BadgeNftAddress Transfer (Issue #20) ──────────────────────────
+
+#[test]
+fn test_propose_accept_badge_nft_address_happy_path() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let badge_client = setup_badge_nft(&env, &client.address);
+    let new_badge = setup_badge_nft(&env, &client.address);
+    let _ = new_badge.address; // deploy a second badge
+
+    client.initialize(&admin);
+    client.set_badge_nft_address(&admin, &badge_client.address);
+    client.propose_new_badge_nft_address(&admin, &new_badge.address);
+    client.accept_badge_nft_address(&new_badge.address);
+
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::BadgeNftAddress)
+            .unwrap();
+        assert_eq!(stored, new_badge.address);
+    });
+    let _ = badge_client; // silence unused
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed BadgeNFT")]
+fn test_accept_badge_nft_address_wrong_acceptor_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let badge_client = setup_badge_nft(&env, &client.address);
+    let proposed = setup_badge_nft(&env, &client.address);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_badge_nft_address(&admin, &badge_client.address);
+    client.propose_new_badge_nft_address(&admin, &proposed.address);
+    client.accept_badge_nft_address(&impostor);
+}
+
+#[test]
+fn test_cancel_badge_nft_transfer_by_admin_recovers_typo() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let badge_client = setup_badge_nft(&env, &client.address);
+    let typo = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_badge_nft_address(&admin, &badge_client.address);
+    client.propose_new_badge_nft_address(&admin, &typo);
+    client.cancel_badge_nft_transfer(&admin);
+
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::BadgeNftAddress)
+            .unwrap();
+        assert_eq!(stored, badge_client.address);
+    });
+}

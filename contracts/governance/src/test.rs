@@ -418,3 +418,149 @@ fn test_upgrade_contract_not_initialized_panics() {
     let new_wasm_hash = BytesN::from_array(&env, &[0xabu8; 32]);
     governance_client.upgrade_contract(&attacker, &new_wasm_hash);
 }
+
+// ── Two-Step Admin Transfer (Issue #20) ────────────────────────────────────
+
+#[test]
+fn test_propose_new_admin_emits_event() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let proposed = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_admin(&admin, &proposed);
+
+    let events = env.events().all();
+    assert!(!events.is_empty(), "TransferProposed event emitted");
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the admin")]
+fn test_propose_new_admin_unauthorized_panics() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let impostor = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_admin(&impostor, &proposed);
+}
+
+#[test]
+fn test_accept_admin_ownership_happy_path() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let new_admin = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_admin(&admin, &new_admin);
+    governance_client.accept_admin_ownership(&new_admin);
+
+    // New admin can call admin-only `cancel_proposal` (proposer or admin).
+    let proposer = Address::generate(&env);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+    governance_client.cancel_proposal(&new_admin, &1);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed admin")]
+fn test_accept_admin_ownership_wrong_acceptor_panics() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_admin(&admin, &proposed);
+    governance_client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_accept_admin_ownership_no_pending_panics() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let impostor = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+fn test_cancel_admin_transfer_typo_recovery() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let typo = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_admin(&admin, &typo);
+    governance_client.cancel_admin_transfer(&admin);
+
+    // Live admin authority unchanged.
+    let proposer = Address::generate(&env);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+    governance_client.cancel_proposal(&admin, &1);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_typo_self_recovery() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let typo = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_admin(&admin, &typo);
+    governance_client.cancel_admin_transfer(&typo);
+
+    let proposer = Address::generate(&env);
+    seed_proposal(&env, &governance_client, 1, &proposer);
+    governance_client.cancel_proposal(&admin, &1);
+}
+
+// ── Two-Step BadgeContractAddress Transfer (Issue #20) ─────────────────────
+
+#[test]
+fn test_propose_accept_badge_contract_address_happy_path() {
+    let (env, governance_client, _badge_client, admin) = setup();
+    let new_badge = Address::generate(&env);
+
+    // Note: `initialize` set the badge contract to `_badge_client.address`.
+    governance_client.initialize(&admin, &_badge_client.address);
+    governance_client.propose_new_badge_contract_address(&admin, &new_badge);
+    governance_client.accept_badge_contract_address(&new_badge);
+
+    env.as_contract(&governance_client.address, || {
+        use soroban_sdk::Symbol;
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, "badge"))
+            .unwrap();
+        assert_eq!(stored, new_badge);
+    });
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed BadgeContract")]
+fn test_accept_badge_contract_address_wrong_acceptor_panics() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_badge_contract_address(&admin, &proposed);
+    governance_client.accept_badge_contract_address(&impostor);
+}
+
+#[test]
+fn test_cancel_badge_contract_transfer_by_admin_recovers_typo() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let typo = Address::generate(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+    governance_client.propose_new_badge_contract_address(&admin, &typo);
+    governance_client.cancel_badge_contract_transfer(&admin);
+
+    env.as_contract(&governance_client.address, || {
+        use soroban_sdk::Symbol;
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, "badge"))
+            .unwrap();
+        assert_eq!(stored, badge_client.address);
+    });
+}
