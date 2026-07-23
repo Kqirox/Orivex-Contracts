@@ -205,3 +205,133 @@ fn test_get_multiplier() {
     });
     assert_eq!(client.get_multiplier(&user), 200);
 }
+
+// ── Two-Step Admin Transfer Tests (Issue #20) ────────────────────────────
+
+#[test]
+fn test_propose_new_admin_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &proposed);
+
+    let events = env.events().all();
+    assert_eq!(events.len(), 2, "init event + propose event");
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the admin")]
+fn test_propose_new_admin_unauthorized_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&impostor, &proposed);
+}
+
+#[test]
+fn test_accept_admin_ownership_happy_path() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &new_admin);
+    client.accept_admin_ownership(&new_admin);
+
+    // After accept, the new admin can perform admin-only operations.
+    // `upgrade_contract` is admin-only; supply a dummy wasm hash.
+    let wasm = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    client.upgrade_contract(&new_admin, &wasm);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed admin")]
+fn test_accept_admin_ownership_wrong_acceptor_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &proposed);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_accept_admin_ownership_no_pending_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+fn test_cancel_admin_transfer_typo_recovery() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let typo = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &typo);
+    client.cancel_admin_transfer(&admin);
+
+    // Admin authority is unchanged.
+    let wasm = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    client.upgrade_contract(&admin, &wasm);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_typo_self_recovery() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let typo = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &typo);
+    client.cancel_admin_transfer(&typo);
+
+    let wasm = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    client.upgrade_contract(&admin, &wasm);
+}
+
+#[test]
+#[should_panic(
+    expected = "Unauthorized: only proposer or current admin can cancel"
+)]
+fn test_cancel_admin_transfer_by_random_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let proposed = Address::generate(&env);
+    let random = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.propose_new_admin(&admin, &proposed);
+    client.cancel_admin_transfer(&random);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_cancel_admin_transfer_no_pending_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    client.initialize(&admin, &token);
+    client.cancel_admin_transfer(&admin);
+}

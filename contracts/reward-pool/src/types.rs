@@ -7,4 +7,8 @@ pub enum DataKey {
     Token,
     Spender(Address),
     IsPaused,
+    /// Pending two-step admin transfer. Holds a
+    /// `contracts_common::two_step::PendingTransfer` while a transfer
+    /// is in flight (issue #20).
+    PendingAdmin,
 }

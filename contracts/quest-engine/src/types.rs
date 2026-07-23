@@ -43,4 +43,11 @@ pub enum DataKey {
     RewardPool,
     IsPaused,
     StakeVault,
+    // ── Two-step transfer slots (Issue #20) ───────────────
+    /// Pending Admin transfer.
+    PendingAdmin,
+    /// Pending RewardPool transfer.
+    PendingRewardPool,
+    /// Pending StakeVault transfer.
+    PendingStakeVault,
 }

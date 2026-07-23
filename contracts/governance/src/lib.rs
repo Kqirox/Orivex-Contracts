@@ -18,6 +18,11 @@ use soroban_sdk::{
     BytesN, Env, Symbol, Vec,
 };
 
+/// Re-exported two-step transfer events (Issue #20).
+pub use contracts_common::two_step::{
+    TransferAccepted, TransferCancelled, TransferProposed,
+};
+
 pub mod types;
 
 pub use types::{DataKey, Proposal};
@@ -62,6 +67,186 @@ pub struct ContractUpgraded {
 
 #[contractimpl]
 impl Governance {
+    // ── Two-step admin transfer (Issue #20) ──────────────────────
+
+    pub fn propose_new_admin(env: Env, current_admin: Address, proposed: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(
+            current_admin == stored_admin,
+            "Unauthorized: Caller is not the admin"
+        );
+
+        let proposed_at = env.ledger().timestamp();
+        env.storage().persistent().set(
+            &DataKey::PendingAdmin,
+            &PendingTransfer {
+                proposed: proposed.clone(),
+                proposed_at,
+            },
+        );
+
+        TransferProposed {
+            current: current_admin,
+            proposed,
+            proposed_at,
+        }
+        .publish(&env);
+    }
+
+    pub fn accept_admin_ownership(env: Env, acceptor: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        acceptor.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .expect("No pending admin transfer");
+        assert!(
+            acceptor == pending.proposed,
+            "Unauthorized: Acceptor is not the proposed admin"
+        );
+
+        let new_admin = pending.proposed.clone();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+        TransferAccepted { new_value: new_admin }.publish(&env);
+    }
+
+    pub fn cancel_admin_transfer(env: Env, caller: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        caller.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .expect("No pending admin transfer");
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(
+            caller == pending.proposed || caller == stored_admin,
+            "Unauthorized: only proposer or current admin can cancel"
+        );
+
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+        TransferCancelled {
+            cancelled_by: caller,
+            was_proposed: pending.proposed,
+        }
+        .publish(&env);
+    }
+
+    // ── Two-step BadgeContractAddress transfer (Issue #20) ────────────
+    // The BadgeContractAddress is set at `initialize` time. Once
+    // configured, two-step methods are the only way to rotate the
+    // badge contract reference.
+
+    pub fn propose_new_badge_contract_address(
+        env: Env,
+        current_admin: Address,
+        proposed: Address,
+    ) {
+        use contracts_common::two_step::PendingTransfer;
+
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(
+            current_admin == stored_admin,
+            "Unauthorized: Caller is not the admin"
+        );
+
+        let current: Address = env
+            .storage()
+            .instance()
+            .get(&BADGE_NFT_KEY)
+            .expect("Contract not initialized");
+
+        let proposed_at = env.ledger().timestamp();
+        env.storage().persistent().set(
+            &DataKey::PendingBadgeContract,
+            &PendingTransfer {
+                proposed: proposed.clone(),
+                proposed_at,
+            },
+        );
+
+        TransferProposed {
+            current,
+            proposed,
+            proposed_at,
+        }
+        .publish(&env);
+    }
+
+    pub fn accept_badge_contract_address(env: Env, acceptor: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        acceptor.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingBadgeContract)
+            .expect("No pending BadgeContract transfer");
+        assert!(
+            acceptor == pending.proposed,
+            "Unauthorized: Acceptor is not the proposed BadgeContract"
+        );
+
+        let new_value = pending.proposed.clone();
+        env.storage()
+            .instance()
+            .set(&BADGE_NFT_KEY, &new_value);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PendingBadgeContract);
+
+        TransferAccepted { new_value }.publish(&env);
+    }
+
+    pub fn cancel_badge_contract_transfer(env: Env, caller: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        caller.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingBadgeContract)
+            .expect("No pending BadgeContract transfer");
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(
+            caller == pending.proposed || caller == stored_admin,
+            "Unauthorized: only proposer or current admin can cancel"
+        );
+
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PendingBadgeContract);
+        TransferCancelled {
+            cancelled_by: caller,
+            was_proposed: pending.proposed,
+        }
+        .publish(&env);
+    }
     /// Initializes the governance contract with the admin and BadgeNFT contract address.
     /// Must be called once upon deployment.
     /// Bootstrap with admin and the BadgeNFT contract address used for

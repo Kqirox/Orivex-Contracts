@@ -10,6 +10,7 @@
 pub mod auth;
 pub mod constants;
 pub mod errors;
+pub mod two_step;
 pub mod types;
 
 // Re-export soroban-sdk for convenience

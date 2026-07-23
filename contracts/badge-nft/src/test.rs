@@ -448,3 +448,129 @@ fn test_has_badge_multiple_badges() {
     assert!(!client.has_badge(&learner, &4));
     assert!(client.has_badge(&learner, &5));
 }
+
+// ── Two-Step Admin Transfer Tests (Issue #20) ────────────────────────────
+
+#[test]
+fn test_propose_new_admin_emits_event() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.propose_new_admin(&registry, &proposed);
+
+    let events = env.events().all();
+    assert_eq!(events.len(), 1, "TransferProposed event emitted");
+
+    let last = events.last().unwrap();
+    let expected_topics: Vec<Val> =
+        (Symbol::new(&env, "transfer_proposed"), registry.clone(), proposed.clone()).into_val(&env);
+    assert_eq!(last.1, expected_topics);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the authorized registry")]
+fn test_propose_new_admin_unauthorized_panics() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.propose_new_admin(&impostor, &proposed);
+}
+
+#[test]
+fn test_accept_admin_ownership_happy_path() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.propose_new_admin(&registry, &new_admin);
+    client.accept_admin_ownership(&new_admin);
+
+    // New admin can mint (the only admin-gated op).
+    client.mint_badge(&new_admin, &learner, &1);
+    assert!(client.has_badge(&learner, &1));
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed admin")]
+fn test_accept_admin_ownership_wrong_acceptor_panics() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.propose_new_admin(&registry, &proposed);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_accept_admin_ownership_no_pending_panics() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+fn test_cancel_admin_transfer_typo_recovery() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let typo = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.propose_new_admin(&registry, &typo);
+
+    // Original admin catches the typo and cancels.
+    client.cancel_admin_transfer(&registry);
+
+    // Registry authority unchanged — still able to mint.
+    let learner = Address::generate(&env);
+    client.mint_badge(&registry, &learner, &1);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_typo_self_recovery() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let typo = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.propose_new_admin(&registry, &typo);
+    // Typo'd address can self-cancel.
+    client.cancel_admin_transfer(&typo);
+
+    let learner = Address::generate(&env);
+    client.mint_badge(&registry, &learner, &1);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: only proposer or current admin can cancel")]
+fn test_cancel_admin_transfer_by_random_panics() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    let proposed = Address::generate(&env);
+    let random = Address::generate(&env);
+
+    client.initialize(&registry);
+    client.propose_new_admin(&registry, &proposed);
+    client.cancel_admin_transfer(&random);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_cancel_admin_transfer_no_pending_panics() {
+    let (env, client) = setup();
+    let registry = Address::generate(&env);
+    client.initialize(&registry);
+    client.cancel_admin_transfer(&registry);
+}

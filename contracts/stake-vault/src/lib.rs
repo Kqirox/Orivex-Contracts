@@ -58,8 +58,107 @@ pub struct ContractUpgraded {
     pub new_wasm_hash: BytesN<32>,
 }
 
+/// Re-exported two-step transfer events (Issue #20).
+pub use contracts_common::two_step::{
+    TransferAccepted, TransferCancelled, TransferProposed,
+};
+
 #[contractimpl]
 impl StakeVault {
+    // ── Two-step admin transfer (Issue #20) ──────────────────
+
+    /// Stage 1 — propose a new admin. Only the current admin may call.
+    pub fn propose_new_admin(
+        env: Env,
+        current_admin: Address,
+        proposed: Address,
+    ) {
+        use contracts_common::two_step::PendingTransfer;
+
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(
+            current_admin == stored_admin,
+            "Unauthorized: Caller is not the admin"
+        );
+
+        let proposed_at = env.ledger().timestamp();
+        env.storage().persistent().set(
+            &DataKey::PendingAdmin,
+            &PendingTransfer {
+                proposed: proposed.clone(),
+                proposed_at,
+            },
+        );
+
+        TransferProposed {
+            current: current_admin,
+            proposed,
+            proposed_at,
+        }
+        .publish(&env);
+    }
+
+    /// Stage 2 — accept the admin role. Only the proposed address may call.
+    pub fn accept_admin_ownership(env: Env, acceptor: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        acceptor.require_auth();
+
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .expect("No pending admin transfer");
+
+        assert!(
+            acceptor == pending.proposed,
+            "Unauthorized: Acceptor is not the proposed admin"
+        );
+
+        let new_admin = pending.proposed.clone();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+        TransferAccepted { new_value: new_admin }.publish(&env);
+    }
+
+    /// Cancel a pending admin transfer. Callable by the proposed
+    /// address or the current admin.
+    pub fn cancel_admin_transfer(env: Env, caller: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        caller.require_auth();
+
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .expect("No pending admin transfer");
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        assert!(
+            caller == pending.proposed || caller == stored_admin,
+            "Unauthorized: only proposer or current admin can cancel"
+        );
+
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+        TransferCancelled {
+            cancelled_by: caller,
+            was_proposed: pending.proposed,
+        }
+        .publish(&env);
+    }
     /// Initializes the StakeVault with admin and reward token
     /// addresses and emits `StakeVaultInitialized`. Admin-only at
     /// deploy time. Re-initialization panics with

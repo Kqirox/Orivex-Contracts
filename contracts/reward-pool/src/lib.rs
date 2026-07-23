@@ -28,6 +28,10 @@ pub trait RewardPoolInterface {
     fn fund_pool(env: Env, donor: Address, amount: i128);
     fn emergency_sweep(env: Env, admin: Address, recovery_wallet: Address);
     fn upgrade_contract(env: Env, admin: Address, new_wasm_hash: BytesN<32>);
+    // ── Two-step admin transfer (Issue #20) ──────────────────────────
+    fn propose_new_admin(env: Env, current_admin: Address, proposed: Address);
+    fn accept_admin_ownership(env: Env, acceptor: Address);
+    fn cancel_admin_transfer(env: Env, caller: Address);
 }
 
 #[contractevent]
@@ -78,6 +82,9 @@ pub struct ContractUpgraded {
 
 #[cfg(feature = "contract")]
 mod contract_impl {
+    use contracts_common::two_step::{
+        PendingTransfer, TransferAccepted, TransferCancelled, TransferProposed,
+    };
     use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
     use crate::types::DataKey;
@@ -372,6 +379,101 @@ mod contract_impl {
             ContractUpgraded {
                 admin,
                 new_wasm_hash,
+            }
+            .publish(&env);
+        }
+
+        // ── Two-step admin transfer (Issue #20) ──────────────────────
+        // The admin can transfer the admin role without a typo ever
+        // locking out the contract permanently: a typo is recovered by
+        // calling `cancel_admin_transfer` before the typo'd address
+        // calls `accept_admin_ownership`. See contracts/common::two_step.
+
+        /// Stage 1 — propose a new admin. Only the current admin may call.
+        pub fn propose_new_admin(
+            env: Env,
+            current_admin: Address,
+            proposed: Address,
+        ) {
+            current_admin.require_auth();
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Not initialized");
+            assert!(
+                current_admin == stored_admin,
+                "Unauthorized: Caller is not the admin"
+            );
+
+            let proposed_at = env.ledger().timestamp();
+            env.storage().persistent().set(
+                &DataKey::PendingAdmin,
+                &PendingTransfer {
+                    proposed: proposed.clone(),
+                    proposed_at,
+                },
+            );
+
+            TransferProposed {
+                current: current_admin,
+                proposed,
+                proposed_at,
+            }
+            .publish(&env);
+        }
+
+        /// Stage 2 — accept the admin role. Only the proposed address may call.
+        pub fn accept_admin_ownership(env: Env, acceptor: Address) {
+            acceptor.require_auth();
+
+            let pending: PendingTransfer = env
+                .storage()
+                .persistent()
+                .get(&DataKey::PendingAdmin)
+                .expect("No pending admin transfer");
+
+            assert!(
+                acceptor == pending.proposed,
+                "Unauthorized: Acceptor is not the proposed admin"
+            );
+
+            let new_admin = pending.proposed.clone();
+            env.storage().instance().set(&DataKey::Admin, &new_admin);
+            env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+            TransferAccepted { new_value: new_admin }.publish(&env);
+        }
+
+        /// Cancel a pending admin transfer. Callable by either the
+        /// current admin or by the proposed address (so a typo can be
+        /// recovered before — or after — the typo'd caller reaches this
+        /// contract).
+        pub fn cancel_admin_transfer(env: Env, caller: Address) {
+            caller.require_auth();
+
+            let pending: PendingTransfer = env
+                .storage()
+                .persistent()
+                .get(&DataKey::PendingAdmin)
+                .expect("No pending admin transfer");
+
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Not initialized");
+
+            assert!(
+                caller == pending.proposed || caller == stored_admin,
+                "Unauthorized: only proposer or current admin can cancel"
+            );
+
+            env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+            TransferCancelled {
+                cancelled_by: caller,
+                was_proposed: pending.proposed,
             }
             .publish(&env);
         }

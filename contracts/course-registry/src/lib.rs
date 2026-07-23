@@ -19,6 +19,11 @@ pub const BASE_REWARD_AMOUNT: i128 = 10_0000000;
 // badges, and RewardPool payout triggering.
 use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
+/// Re-exported two-step transfer events (Issue #20).
+pub use contracts_common::two_step::{
+    TransferAccepted, TransferCancelled, TransferProposed,
+};
+
 pub mod types;
 use types::{Course, DataKey};
 
@@ -89,6 +94,279 @@ pub struct ContractUpgraded {
 
 #[contractimpl]
 impl CourseRegistry {
+    // ── Two-step admin transfer (Issue #20) ──────────────────────
+
+    /// Stage 1 — propose a new admin. Only the current admin may call.
+    pub fn propose_new_admin(env: Env, current_admin: Address, proposed: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            current_admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        let proposed_at = env.ledger().timestamp();
+        env.storage().persistent().set(
+            &DataKey::PendingAdmin,
+            &PendingTransfer {
+                proposed: proposed.clone(),
+                proposed_at,
+            },
+        );
+
+        TransferProposed {
+            current: current_admin,
+            proposed,
+            proposed_at,
+        }
+        .publish(&env);
+    }
+
+    pub fn accept_admin_ownership(env: Env, acceptor: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        acceptor.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .expect("No pending admin transfer");
+        assert!(
+            acceptor == pending.proposed,
+            "Unauthorized: Acceptor is not the proposed admin"
+        );
+
+        let new_admin = pending.proposed.clone();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+
+        TransferAccepted { new_value: new_admin }.publish(&env);
+    }
+
+    pub fn cancel_admin_transfer(env: Env, caller: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        caller.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .expect("No pending admin transfer");
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            caller == pending.proposed || caller == stored_admin,
+            "Unauthorized: only proposer or current admin can cancel"
+        );
+
+        env.storage().persistent().remove(&DataKey::PendingAdmin);
+        TransferCancelled {
+            cancelled_by: caller,
+            was_proposed: pending.proposed,
+        }
+        .publish(&env);
+    }
+
+    // ── Two-step RewardPoolAddress transfer (Issue #20) ──────
+    // The single-step `set_reward_pool_address` remains for the
+    // initial bootstrap; updates after deployment require the
+    // two-step flow below.
+
+    pub fn propose_new_reward_pool_address(
+        env: Env,
+        current_admin: Address,
+        proposed: Address,
+    ) {
+        use contracts_common::two_step::PendingTransfer;
+
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            current_admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        let current: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::RewardPoolAddress)
+            .expect("RewardPool address not configured");
+
+        let proposed_at = env.ledger().timestamp();
+        env.storage().persistent().set(
+            &DataKey::PendingRewardPool,
+            &PendingTransfer {
+                proposed: proposed.clone(),
+                proposed_at,
+            },
+        );
+
+        TransferProposed {
+            current,
+            proposed,
+            proposed_at,
+        }
+        .publish(&env);
+    }
+
+    pub fn accept_reward_pool_address(env: Env, acceptor: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        acceptor.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingRewardPool)
+            .expect("No pending RewardPool transfer");
+        assert!(
+            acceptor == pending.proposed,
+            "Unauthorized: Acceptor is not the proposed RewardPool"
+        );
+
+        let new_value = pending.proposed.clone();
+        env.storage()
+            .instance()
+            .set(&DataKey::RewardPoolAddress, &new_value);
+        env.storage().persistent().remove(&DataKey::PendingRewardPool);
+
+        TransferAccepted { new_value }.publish(&env);
+    }
+
+    pub fn cancel_reward_pool_transfer(env: Env, caller: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        caller.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingRewardPool)
+            .expect("No pending RewardPool transfer");
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            caller == pending.proposed || caller == stored_admin,
+            "Unauthorized: only proposer or current admin can cancel"
+        );
+
+        env.storage().persistent().remove(&DataKey::PendingRewardPool);
+        TransferCancelled {
+            cancelled_by: caller,
+            was_proposed: pending.proposed,
+        }
+        .publish(&env);
+    }
+
+    // ── Two-step BadgeNftAddress transfer (Issue #20) ─────────
+    // The single-step `set_badge_nft_address` remains for the
+    // initial bootstrap; updates after deployment require the
+    // two-step flow below.
+
+    pub fn propose_new_badge_nft_address(
+        env: Env,
+        current_admin: Address,
+        proposed: Address,
+    ) {
+        use contracts_common::two_step::PendingTransfer;
+
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            current_admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        let current: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::BadgeNftAddress)
+            .expect("BadgeNFT address not configured");
+
+        let proposed_at = env.ledger().timestamp();
+        env.storage().persistent().set(
+            &DataKey::PendingBadgeNft,
+            &PendingTransfer {
+                proposed: proposed.clone(),
+                proposed_at,
+            },
+        );
+
+        TransferProposed {
+            current,
+            proposed,
+            proposed_at,
+        }
+        .publish(&env);
+    }
+
+    pub fn accept_badge_nft_address(env: Env, acceptor: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        acceptor.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingBadgeNft)
+            .expect("No pending BadgeNFT transfer");
+        assert!(
+            acceptor == pending.proposed,
+            "Unauthorized: Acceptor is not the proposed BadgeNFT"
+        );
+
+        let new_value = pending.proposed.clone();
+        env.storage()
+            .instance()
+            .set(&DataKey::BadgeNftAddress, &new_value);
+        env.storage().persistent().remove(&DataKey::PendingBadgeNft);
+
+        TransferAccepted { new_value }.publish(&env);
+    }
+
+    pub fn cancel_badge_nft_transfer(env: Env, caller: Address) {
+        use contracts_common::two_step::PendingTransfer;
+
+        caller.require_auth();
+        let pending: PendingTransfer = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingBadgeNft)
+            .expect("No pending BadgeNFT transfer");
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            caller == pending.proposed || caller == stored_admin,
+            "Unauthorized: only proposer or current admin can cancel"
+        );
+
+        env.storage().persistent().remove(&DataKey::PendingBadgeNft);
+        TransferCancelled {
+            cancelled_by: caller,
+            was_proposed: pending.proposed,
+        }
+        .publish(&env);
+    }
     /// Sets the official Protocol Admin. Must be called once upon deployment.
     /// Sets the single Protocol Admin in instance storage at deploy time.
     /// Idempotent guards prevent re-initialization: the function panics if

@@ -1202,3 +1202,183 @@ fn test_review_submission_multiplier_120_large_reward() {
     assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
     assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
 }
+
+// ── Two-Step Admin Transfer (Issue #20) ────────────────────────────────────
+
+#[test]
+fn test_propose_new_admin_emits_event() {
+    let (env, client, _token, _rp, admin, _sv) = setup();
+    let proposed = Address::generate(&env);
+
+    client.propose_new_admin(&admin, &proposed);
+
+    let events = env.events().all();
+    assert!(!events.is_empty(), "TransferProposed event emitted");
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the admin")]
+fn test_propose_new_admin_unauthorized_panics() {
+    let (env, client, _token, _rp, _admin, _sv) = setup();
+    let impostor = Address::generate(&env);
+    let proposed = Address::generate(&env);
+
+    client.propose_new_admin(&impostor, &proposed);
+}
+
+#[test]
+fn test_accept_admin_ownership_happy_path() {
+    let (env, client, _token, _rp, admin, _sv) = setup();
+    let new_admin = Address::generate(&env);
+
+    client.propose_new_admin(&admin, &new_admin);
+    client.accept_admin_ownership(&new_admin);
+
+    // New admin can create Explore quests (admin-only).
+    let quest_id = client.create_explore_quest(&new_admin, &100, &BytesN::from_array(&env, &[1u8; 32]));
+    assert_eq!(quest_id, 1);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed admin")]
+fn test_accept_admin_ownership_wrong_acceptor_panics() {
+    let (env, client, _token, _rp, admin, _sv) = setup();
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.propose_new_admin(&admin, &proposed);
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+#[should_panic(expected = "No pending admin transfer")]
+fn test_accept_admin_ownership_no_pending_panics() {
+    let (env, client, _token, _rp, _admin, _sv) = setup();
+    let impostor = Address::generate(&env);
+
+    client.accept_admin_ownership(&impostor);
+}
+
+#[test]
+fn test_cancel_admin_transfer_typo_recovery() {
+    let (env, client, _token, _rp, admin, _sv) = setup();
+    let typo = Address::generate(&env);
+
+    client.propose_new_admin(&admin, &typo);
+    client.cancel_admin_transfer(&admin);
+
+    // Admin authority unchanged.
+    let quest_id = client.create_explore_quest(&admin, &100, &BytesN::from_array(&env, &[2u8; 32]));
+    assert_eq!(quest_id, 1);
+}
+
+#[test]
+fn test_cancel_admin_transfer_by_typo_self_recovery() {
+    let (env, client, _token, _rp, admin, _sv) = setup();
+    let typo = Address::generate(&env);
+
+    client.propose_new_admin(&admin, &typo);
+    client.cancel_admin_transfer(&typo);
+
+    let quest_id = client.create_explore_quest(&admin, &100, &BytesN::from_array(&env, &[3u8; 32]));
+    assert_eq!(quest_id, 1);
+}
+
+// ── Two-Step RewardPool Address Transfer (Issue #20) ──────────────────────
+
+#[test]
+fn test_propose_accept_reward_pool_address_happy_path() {
+    let (env, client, _token, _old_rp, admin, _sv) = setup();
+    let new_pool = Address::generate(&env);
+
+    client.propose_new_reward_pool_address(&admin, &new_pool);
+    client.accept_reward_pool_address(&new_pool);
+
+    // Verify by reading storage via as_contract.
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&crate::types::DataKey::RewardPool)
+            .unwrap();
+        assert_eq!(stored, new_pool);
+    });
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed RewardPool")]
+fn test_accept_reward_pool_address_wrong_acceptor_panics() {
+    let (env, client, _token, _old_rp, admin, _sv) = setup();
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.propose_new_reward_pool_address(&admin, &proposed);
+    client.accept_reward_pool_address(&impostor);
+}
+
+#[test]
+fn test_cancel_reward_pool_transfer_by_admin_recovers_typo() {
+    let (env, client, _token, old_rp, admin, _sv) = setup();
+    let typo = Address::generate(&env);
+
+    client.propose_new_reward_pool_address(&admin, &typo);
+    client.cancel_reward_pool_transfer(&admin);
+
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&crate::types::DataKey::RewardPool)
+            .unwrap();
+        assert_eq!(stored, old_rp);
+    });
+}
+
+// ── Two-Step StakeVault Address Transfer (Issue #20) ──────────────────────
+
+#[test]
+fn test_propose_accept_stake_vault_address_happy_path() {
+    let (env, client, _token, _rp, admin, _old_sv) = setup();
+    let new_sv = Address::generate(&env);
+
+    client.propose_new_stake_vault_address(&admin, &new_sv);
+    client.accept_stake_vault_address(&new_sv);
+
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&crate::types::DataKey::StakeVault)
+            .unwrap();
+        assert_eq!(stored, new_sv);
+    });
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Acceptor is not the proposed StakeVault")]
+fn test_accept_stake_vault_address_wrong_acceptor_panics() {
+    let (env, client, _token, _rp, admin, _sv) = setup();
+    let proposed = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    client.propose_new_stake_vault_address(&admin, &proposed);
+    client.accept_stake_vault_address(&impostor);
+}
+
+#[test]
+fn test_cancel_stake_vault_transfer_by_admin_recovers_typo() {
+    let (env, client, _token, _rp, admin, old_sv) = setup();
+    let typo = Address::generate(&env);
+
+    client.propose_new_stake_vault_address(&admin, &typo);
+    client.cancel_stake_vault_transfer(&admin);
+
+    env.as_contract(&client.address, || {
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&crate::types::DataKey::StakeVault)
+            .unwrap();
+        assert_eq!(stored, old_sv);
+    });
+}
