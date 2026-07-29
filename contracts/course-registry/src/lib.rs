@@ -86,6 +86,14 @@ pub struct CourseCompleted {
 }
 
 #[contractevent]
+pub struct Unenrolled {
+    #[topic]
+    pub learner: Address,
+    #[topic]
+    pub course_id: u32,
+}
+
+#[contractevent]
 pub struct ContractUpgraded {
     #[topic]
     pub admin: Address,
@@ -268,6 +276,60 @@ impl CourseRegistry {
         );
 
         env.storage().persistent().set(&progress_key, &0u32);
+    }
+
+    /// Unenrolls a learner from a course, removing their progress record.
+    /// Only callable by the learner themselves.
+    ///
+    /// # Panics
+    /// * `"Course not found"` — the course ID has no record.
+    /// * `"Already completed"` — the learner has finished the course;
+    ///   completed courses are irreversible.
+    /// * `"Not enrolled"` — the learner has no progress record for
+    ///   this course.
+    pub fn unenroll(env: Env, learner: Address, id: u32) {
+        learner.require_auth();
+
+        let course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        let progress_key = DataKey::Progress(learner.clone(), id);
+
+        assert!(
+            env.storage().persistent().has(&progress_key),
+            "Not enrolled"
+        );
+
+        let progress: u32 = env
+            .storage()
+            .persistent()
+            .get(&progress_key)
+            .unwrap_or(0);
+
+        assert!(progress < course.total_modules, "Already completed");
+
+        env.storage().persistent().remove(&progress_key);
+
+        Unenrolled {
+            learner,
+            course_id: id,
+        }
+        .publish(&env);
+    }
+
+    /// Returns true if the learner is currently enrolled in the course.
+    ///
+    /// An enrollment exists when there is a `DataKey::Progress` record
+    /// for the (learner, course) pair, regardless of whether progress
+    /// is zero or partially complete. Learners who have finished the
+    /// course are still considered enrolled.
+    pub fn is_enrolled(env: Env, learner: Address, id: u32) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::Progress(learner, id))
     }
 
     /// Helper to check the current total number of courses.
