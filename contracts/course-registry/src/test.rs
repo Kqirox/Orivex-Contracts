@@ -456,7 +456,130 @@ fn test_set_course_status_nonexistent_course() {
     client.set_course_status(&admin, &99, &false);
 }
 
-// ── complete_module Tests ─────────────────────────────────────────────────────
+// ── enroll_many (Issue #31) ───────────────────────────────────────────────────
+
+#[test]
+fn test_enroll_many_success() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    let learner_a = Address::generate(&env);
+    let learner_b = Address::generate(&env);
+    let learner_c = Address::generate(&env);
+
+    let learners = soroban_sdk::vec![&env, learner_a.clone(), learner_b.clone(), learner_c.clone()];
+
+    let results = client.enroll_many(&admin, &learners, &id);
+
+    assert_eq!(results.len(), 3);
+    assert!(results.get(0).unwrap());
+    assert!(results.get(1).unwrap());
+    assert!(results.get(2).unwrap());
+
+    // All three should be enrolled
+    assert!(client.is_enrolled(&learner_a, &id));
+    assert!(client.is_enrolled(&learner_b, &id));
+    assert!(client.is_enrolled(&learner_c, &id));
+}
+
+#[test]
+fn test_enroll_many_partial_duplicates() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    let learner_a = Address::generate(&env);
+    let learner_b = Address::generate(&env);
+
+    // Enroll learner_a first via single enroll
+    client.enroll(&learner_a, &id);
+
+    // Now batch-enroll both
+    let learners =
+        soroban_sdk::vec![&env, learner_a.clone(), learner_b.clone()];
+
+    let results = client.enroll_many(&admin, &learners, &id);
+
+    assert_eq!(results.len(), 2);
+    assert!(!results.get(0).unwrap()); // already enrolled → false
+    assert!(results.get(1).unwrap()); // newly enrolled → true
+
+    // Both should be enrolled regardless
+    assert!(client.is_enrolled(&learner_a, &id));
+    assert!(client.is_enrolled(&learner_b, &id));
+}
+
+#[test]
+fn test_enroll_many_empty_vec() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    let learners = soroban_sdk::Vec::<Address>::new(&env);
+    let results = client.enroll_many(&admin, &learners, &id);
+
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_enroll_many_all_already_enrolled() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    let learner_a = Address::generate(&env);
+    let learner_b = Address::generate(&env);
+
+    // Enroll both first
+    client.enroll(&learner_a, &id);
+    client.enroll(&learner_b, &id);
+
+    // Now batch-enroll the same learners
+    let learners =
+        soroban_sdk::vec![&env, learner_a.clone(), learner_b.clone()];
+
+    let results = client.enroll_many(&admin, &learners, &id);
+
+    assert_eq!(results.len(), 2);
+    assert!(!results.get(0).unwrap());
+    assert!(!results.get(1).unwrap());
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_enroll_many_unauthorized_admin_panics() {
+    let (env, client) = setup();
+    let (_, _, id) = setup_with_course(&env, &client);
+    let fake_admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    let learners = soroban_sdk::vec![&env, learner];
+    client.enroll_many(&fake_admin, &learners, &id);
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_enroll_many_nonexistent_course_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    let learners = soroban_sdk::vec![&env, learner];
+    client.enroll_many(&admin, &learners, &99);
+}
+
+#[test]
+#[should_panic(expected = "Course is not active")]
+fn test_enroll_many_inactive_course_panics() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+    let learner = Address::generate(&env);
+
+    // Deactivate the course first
+    client.set_course_status(&admin, &id, &false);
+
+    let learners = soroban_sdk::vec![&env, learner];
+    client.enroll_many(&admin, &learners, &id);
+}
 
 #[test]
 fn test_complete_module_increments_progress() {

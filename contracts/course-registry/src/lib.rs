@@ -270,6 +270,54 @@ impl CourseRegistry {
         env.storage().persistent().set(&progress_key, &0u32);
     }
 
+    /// Enrolls multiple learners in a course in a single transaction.
+    /// Only callable by the Protocol Admin (cohort onboarding pattern).
+    ///
+    /// For each learner, validates that the course exists and is active,
+    /// then inserts a progress record at zero. Returns a `Vec<bool>`
+    /// where each element is `true` if the learner was newly enrolled
+    /// and `false` if the learner was already enrolled (skipped).
+    /// Does not abort on partial failure.
+    pub fn enroll_many(
+        env: Env,
+        admin: Address,
+        learners: soroban_sdk::Vec<Address>,
+        id: u32,
+    ) -> soroban_sdk::Vec<bool> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        let course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+        assert!(course.active, "Course is not active");
+
+        let mut results = soroban_sdk::Vec::new(&env);
+        for learner in learners.iter() {
+            let progress_key = DataKey::Progress(learner.clone(), id);
+            if env.storage().persistent().has(&progress_key) {
+                results.push_back(false);
+            } else {
+                env.storage()
+                    .persistent()
+                    .set(&progress_key, &0u32);
+                results.push_back(true);
+            }
+        }
+        results
+    }
+
     /// Helper to check the current total number of courses.
     /// Returns the total number of courses currently registered
     /// on-chain. Reads from `DataKey::CourseCount` instance storage
