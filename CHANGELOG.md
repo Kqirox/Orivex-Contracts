@@ -34,7 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- N/A
+- `quest-engine`: deactivate a quest once an approved payout is executed (single and batch review), so `refund_quest` can no longer return escrow that was already paid out
+- `quest-engine`: block review payouts on inactive (already refunded) quests to prevent double-spending the pooled escrow
+- `quest-engine`: validate `reward_amount` on both quest creation paths (`create_build_quest`, `create_explore_quest`) — reject zero/negative amounts and amounts above `MAX_QUEST_REWARD`
 
 ### Security
 
