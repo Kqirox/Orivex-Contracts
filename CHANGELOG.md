@@ -37,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `quest-engine`: deactivate a quest once an approved payout is executed (single and batch review), so `refund_quest` can no longer return escrow that was already paid out
 - `quest-engine`: block review payouts on inactive (already refunded) quests to prevent double-spending the pooled escrow
 - `quest-engine`: validate `reward_amount` on both quest creation paths (`create_build_quest`, `create_explore_quest`) — reject zero/negative amounts and amounts above `MAX_QUEST_REWARD`
+- `quest-engine`: apply the learner stake multiplier in payouts — the boosted base share is paid out (previously it was always truncated back to the base), hard-capped at the escrowed `reward_amount` so `fee + learner_amount` never exceeds the escrow
+- `quest-engine`: always publish `PayoutComputed` on every payout in `review_submission` and `batch_review_submissions`, instead of only when the boost was capped
 
 ### Security
 
