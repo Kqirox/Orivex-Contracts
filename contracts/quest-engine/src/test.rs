@@ -591,6 +591,171 @@ fn test_refund_quest_wrong_employer_panics() {
     client.refund_quest(&wrong_employer, &quest_id);
 }
 
+// ── Quest Payout Integrity Tests ─────────────────────────────────────────────
+
+#[test]
+fn test_quest_deactivated_after_approved_payout() {
+    let (env, client, token_id, reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[90u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[91u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    let quest = client.get_quest(&quest_id).unwrap();
+    assert!(!quest.active, "quest must deactivate after payout");
+
+    // Escrow fully distributed: learner 850 + pool 150
+    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
+    assert_eq!(token_balance(&env, &token_id, &learner), 850);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), 150);
+}
+
+#[test]
+#[should_panic(expected = "Quest already inactive")]
+fn test_refund_after_approved_payout_panics() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[92u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[93u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Employer approves — learner is paid, quest is deactivated
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // Refund after payout must be rejected (double-spend attempt)
+    client.refund_quest(&employer, &quest_id);
+}
+
+#[test]
+#[should_panic(expected = "Quest already inactive")]
+fn test_refund_after_batch_approval_panics() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[94u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+
+    client.refund_quest(&employer, &quest_id);
+}
+
+#[test]
+#[should_panic(expected = "Quest is not active")]
+fn test_review_after_refund_panics() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[95u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[96u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Employer cancels first — escrow returned
+    client.refund_quest(&employer, &quest_id);
+
+    // Approving after the refund must not pay from the pooled balance
+    client.review_submission(&employer, &learner, &quest_id, &true);
+}
+
+#[test]
+#[should_panic(expected = "Quest is not active")]
+fn test_batch_review_after_refund_panics() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[97u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+    client.refund_quest(&employer, &quest_id);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+}
+
+// ── Quest Reward Validation Tests ────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "reward_amount below minimum")]
+fn test_create_build_quest_zero_reward_panics() {
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let metadata_hash = BytesN::from_array(&env, &[0xc0u8; 32]);
+
+    client.create_build_quest(&employer, &0, &metadata_hash);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount below minimum")]
+fn test_create_build_quest_negative_reward_panics() {
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let metadata_hash = BytesN::from_array(&env, &[0xc1u8; 32]);
+
+    client.create_build_quest(&employer, &-100, &metadata_hash);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount exceeds max")]
+fn test_create_build_quest_exceeds_max_reward_panics() {
+    let (env, client, _token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let metadata_hash = BytesN::from_array(&env, &[0xc2u8; 32]);
+
+    client.create_build_quest(&employer, &(crate::MAX_QUEST_REWARD + 1), &metadata_hash);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount below minimum")]
+fn test_create_explore_quest_zero_reward_panics() {
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let metadata_hash = BytesN::from_array(&env, &[0xc3u8; 32]);
+
+    client.create_explore_quest(&admin, &0, &metadata_hash);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount below minimum")]
+fn test_create_explore_quest_negative_reward_panics() {
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let metadata_hash = BytesN::from_array(&env, &[0xc4u8; 32]);
+
+    client.create_explore_quest(&admin, &-100, &metadata_hash);
+}
+
+#[test]
+#[should_panic(expected = "reward_amount exceeds max")]
+fn test_create_explore_quest_exceeds_max_reward_panics() {
+    let (env, client, _token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let metadata_hash = BytesN::from_array(&env, &[0xc5u8; 32]);
+
+    client.create_explore_quest(&admin, &(crate::MAX_QUEST_REWARD + 1), &metadata_hash);
+}
+
 // ── Staking Multiplier Tests ────────────────────────────────────────────────
 
 /// Mock StakeVault that returns a custom multiplier

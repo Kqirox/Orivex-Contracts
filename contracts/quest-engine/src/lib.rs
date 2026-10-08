@@ -17,6 +17,11 @@ pub const VERSION: u32 = 1;
 
 pub const MAX_QUEST_REWARD: i128 = 1_000_000_000_000_000;
 
+/// Minimum escrow for a quest. Chosen so the 15% platform fee
+/// (`reward * 1500 / 10000`) is always at least 1 and zero/negative
+/// reward amounts are rejected up front.
+pub const MIN_QUEST_REWARD: i128 = 10;
+
 pub const PLATFORM_FEE_BASIS_POINTS: u32 = 1500;
 // Crate overview — Build and Explore quests. Build quests are
 // employer-funded and reviewed per submission. Explore quests are
@@ -297,6 +302,10 @@ impl QuestEngineContract {
         employer.require_auth();
 
         assert!(
+            reward_amount >= MIN_QUEST_REWARD,
+            "reward_amount below minimum"
+        );
+        assert!(
             reward_amount <= MAX_QUEST_REWARD,
             "reward_amount exceeds max"
         );
@@ -383,6 +392,15 @@ impl QuestEngineContract {
             .get(&DataKey::Admin)
             .expect("Not initialized");
         assert!(admin == stored_admin, "Unauthorized");
+
+        assert!(
+            reward_amount >= MIN_QUEST_REWARD,
+            "reward_amount below minimum"
+        );
+        assert!(
+            reward_amount <= MAX_QUEST_REWARD,
+            "reward_amount exceeds max"
+        );
 
         // 3. Increment Quest ID counter
         let mut quest_id: u32 = env
@@ -488,7 +506,9 @@ impl QuestEngineContract {
     /// Approves or rejects a single submission, applying the staking
     /// multiplier from the configured StakeVault. The boosted learner
     /// payout is capped at the available post-fee balance so that
-    /// employer-funded quests can never go negative.
+    /// employer-funded quests can never go negative. On approval the
+    /// quest is deactivated so the escrow can no longer be refunded
+    /// via `refund_quest`.
     pub fn review_submission(
         env: Env,
         employer: Address,
@@ -508,13 +528,16 @@ impl QuestEngineContract {
         employer.require_auth();
 
         // 2. Retrieve Quest. Assert quest.employer == employer.
-        let quest: Quest = env
+        let mut quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
             .expect("Quest not found");
         if quest.employer != employer {
             panic!("Only the quest employer can review submissions");
+        }
+        if approve && !quest.active {
+            panic!("Quest is not active");
         }
 
         // 3. Retrieve Submission. Assert status == Pending.
@@ -572,6 +595,12 @@ impl QuestEngineContract {
             }
 
             submission.status = SubmissionStatus::Approved;
+
+            // Payout executed — lock the quest out of `refund_quest`.
+            quest.active = false;
+            env.storage()
+                .persistent()
+                .set(&DataKey::Quest(quest_id), &quest);
         } else {
             // 5. If approve == false:
             // a. Update submission status to Rejected.
@@ -643,7 +672,8 @@ impl QuestEngineContract {
     /// quest. Each submission must be `Pending`; the function
     /// panics on the first non-pending submission. Emits both
     /// individual `SubmissionReviewed` events and a single
-    /// `BatchReviewed` summary event with the approved count.
+    /// `BatchReviewed` summary event with the approved count. The quest
+    /// is deactivated once any payout has been executed.
     pub fn batch_review_submissions(
         env: Env,
         employer: Address,
@@ -660,13 +690,16 @@ impl QuestEngineContract {
 
         employer.require_auth();
 
-        let quest: Quest = env
+        let mut quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
             .expect("Quest not found");
         if quest.employer != employer {
             panic!("Only the quest employer can review submissions");
+        }
+        if !quest.active {
+            panic!("Quest is not active");
         }
 
         let token_address: Address = env
@@ -733,6 +766,14 @@ impl QuestEngineContract {
             .publish(&env);
 
             approved_count += 1;
+        }
+
+        // Payout executed — lock the quest out of `refund_quest`.
+        if approved_count > 0 {
+            quest.active = false;
+            env.storage()
+                .persistent()
+                .set(&DataKey::Quest(quest_id), &quest);
         }
 
         BatchReviewed {
