@@ -174,17 +174,30 @@ pub struct QuestEngineContract;
 /// Computes the fee split and staking boost for a quest payout.
 ///
 /// Returns `(fee, learner_amount, boost_actual, boost_capped)` where:
-/// - `fee`: platform fee (15% of `reward`).
+/// - `fee`: platform fee actually paid (15% of `reward`, reduced when the
+///   boosted learner amount would otherwise overrun the escrow).
 /// - `learner_amount`: actual tokens transferred to the learner.
 /// - `boost_actual`: the boosted amount before cap (`base * multiplier_bps / 100`).
-/// - `boost_capped`: true when the boost was truncated to the available balance.
+/// - `boost_capped`: true when the boost was truncated by the reward cap.
+///
+/// Cap rule: `learner_amount = min(boost_actual, reward)` and
+/// `fee = min(15% of reward, reward - learner_amount)`, so
+/// `fee + learner_amount <= reward` — the total payout can never exceed
+/// the escrowed `reward_amount`, even for multipliers whose boosted base
+/// (120 / 200 bps) is larger than the escrow itself.
 pub fn compute_learner_payout(reward: i128, multiplier_bps: u32) -> (i128, i128, i128, bool) {
     let fee = (reward * PLATFORM_FEE_BASIS_POINTS as i128) / 10_000;
     let base = reward - fee;
     let boost_actual = (base * multiplier_bps as i128) / stake_vault::STAKE_TIER_NONE_BPS as i128;
-    let capped = boost_actual > base;
-    let learner_amount = if capped { base } else { boost_actual };
-    (fee, learner_amount, boost_actual, capped)
+    let learner_amount = if boost_actual > reward {
+        reward
+    } else {
+        boost_actual
+    };
+    let max_fee = reward - learner_amount;
+    let fee_paid = if fee < max_fee { fee } else { max_fee };
+    let capped = learner_amount < boost_actual;
+    (fee_paid, learner_amount, boost_actual, capped)
 }
 
 #[contractimpl]
@@ -504,11 +517,12 @@ impl QuestEngineContract {
 
     /// Allows an employer to review and approve/reject a learner's submission.
     /// Approves or rejects a single submission, applying the staking
-    /// multiplier from the configured StakeVault. The boosted learner
-    /// payout is capped at the available post-fee balance so that
-    /// employer-funded quests can never go negative. On approval the
-    /// quest is deactivated so the escrow can no longer be refunded
-    /// via `refund_quest`.
+    /// multiplier from the configured StakeVault: the learner receives the
+    /// boosted base share, hard-capped at the escrowed `reward_amount` so
+    /// the fee + learner payout can never exceed the escrow. Emits
+    /// `PayoutComputed` on every approval. On approval the quest is
+    /// deactivated so the escrow can no longer be refunded via
+    /// `refund_quest`.
     pub fn review_submission(
         env: Env,
         employer: Address,
@@ -582,17 +596,15 @@ impl QuestEngineContract {
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
             token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
 
-            if boost_capped {
-                PayoutComputed {
-                    learner: learner.clone(),
-                    quest_id,
-                    fee,
-                    learner_amount,
-                    boost_actual,
-                    boost_capped,
-                }
-                .publish(&env);
+            PayoutComputed {
+                learner: learner.clone(),
+                quest_id,
+                fee,
+                learner_amount,
+                boost_actual,
+                boost_capped,
             }
+            .publish(&env);
 
             submission.status = SubmissionStatus::Approved;
 
@@ -742,17 +754,15 @@ impl QuestEngineContract {
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
             token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
 
-            if boost_capped {
-                PayoutComputed {
-                    learner: learner.clone(),
-                    quest_id,
-                    fee,
-                    learner_amount,
-                    boost_actual,
-                    boost_capped,
-                }
-                .publish(&env);
+            PayoutComputed {
+                learner: learner.clone(),
+                quest_id,
+                fee,
+                learner_amount,
+                boost_actual,
+                boost_capped,
             }
+            .publish(&env);
 
             submission.status = SubmissionStatus::Approved;
             env.storage().persistent().set(&submission_key, &submission);

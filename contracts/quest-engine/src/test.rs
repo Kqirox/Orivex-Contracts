@@ -1,7 +1,7 @@
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, Events},
-    Address, BytesN, Env,
+    Address, BytesN, Env, IntoVal, Symbol, Val,
 };
 
 use crate::types::{QuestType, SubmissionStatus};
@@ -61,6 +61,17 @@ fn mint_tokens(env: &Env, token_id: &Address, to: &Address, amount: &i128) {
 
 fn token_balance(env: &Env, token_id: &Address, of: &Address) -> i128 {
     soroban_sdk::token::Client::new(env, token_id).balance(of)
+}
+
+/// Returns true if a `PayoutComputed` event for `(learner, quest_id)`
+/// appears in the recorded event stream.
+fn payout_computed_emitted(env: &Env, learner: &Address, quest_id: u32) -> bool {
+    let expected_topics: soroban_sdk::Vec<Val> =
+        (Symbol::new(env, "payout_computed"), learner, quest_id).into_val(env);
+    env.events()
+        .all()
+        .iter()
+        .any(|(_, topics, _)| topics == expected_topics)
 }
 
 // ── Initialize Tests ─────────────────────────────────────────────────────────
@@ -769,6 +780,25 @@ impl MockStakeVaultWithMultiplier {
     }
 }
 
+/// Mock StakeVault that returns the high stake tier multiplier
+#[contract]
+pub struct MockStakeVaultHighMultiplier;
+
+#[contractimpl]
+impl MockStakeVaultHighMultiplier {
+    pub fn get_multiplier(_env: Env, _learner: Address) -> u32 {
+        200 // 2.0x multiplier
+    }
+}
+
+fn register_stake_vault(env: &Env, multiplier: u32) -> Address {
+    match multiplier {
+        120 => env.register(MockStakeVaultWithMultiplier, ()),
+        200 => env.register(MockStakeVaultHighMultiplier, ()),
+        _ => env.register(MockStakeVault, ()),
+    }
+}
+
 fn setup_with_multiplier(
     multiplier: u32,
 ) -> (Env, QuestEngineContractClient<'static>, Address, Address) {
@@ -784,11 +814,7 @@ fn setup_with_multiplier(
         .address();
 
     // Register custom stake vault based on multiplier
-    let stake_vault_id = if multiplier == 120 {
-        env.register(MockStakeVaultWithMultiplier, ())
-    } else {
-        env.register(MockStakeVault, ())
-    };
+    let stake_vault_id = register_stake_vault(&env, multiplier);
 
     let admin = Address::generate(&env);
     let reward_pool = Address::generate(&env);
@@ -839,17 +865,14 @@ fn test_review_submission_with_120_multiplier() {
 
     client.review_submission(&employer, &learner, &quest_id, &true);
 
-    // With 120 multiplier (1.2x), the calculated boost would be 1020
-    // But since quest only has 850 available (after 150 fee), learner gets capped to 850
-    let fee = (reward_amount * 15) / 100; // 150
-    let base_amount = reward_amount - fee; // 850
-                                           // Multiplier would give 1020, but capped to 850
-
+    // With 120 multiplier (1.2x), boost = 850 * 1.2 = 1020 > reward 1000,
+    // so the learner payout is hard-capped at the escrowed reward and the
+    // platform fee absorbs the overflow (fee = 1000 - 1000 = 0).
     assert_eq!(
         token_balance(&env, &token_id, &learner),
-        base_amount // Capped to available funds
+        reward_amount // capped at escrowed reward
     );
-    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), 0);
 }
 
 #[test]
@@ -1222,11 +1245,14 @@ fn test_compute_learner_payout_multiplier_100() {
 #[test]
 fn test_compute_learner_payout_multiplier_120_capped() {
     let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(1000, 120);
-    // fee = 150, base = 850, boost = 850*120/100 = 1020 > 850 => capped
-    assert_eq!(fee, 150);
+    // fee = 150, base = 850, boost = 850*120/100 = 1020 > reward 1000
+    // => learner capped at reward, fee absorbs the overflow
+    assert_eq!(fee, 0);
     assert_eq!(boost_actual, 1020);
-    assert_eq!(learner_amount, 850); // capped at base
+    assert_eq!(learner_amount, 1000); // capped at escrowed reward
     assert!(capped);
+    // total payout never exceeds the escrow
+    assert!(fee + learner_amount <= 1000);
 }
 
 #[test]
@@ -1242,10 +1268,35 @@ fn test_compute_learner_payout_multiplier_80_below_base() {
 #[test]
 fn test_compute_learner_payout_large_reward_multiplier_120() {
     let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(10_000, 120);
-    assert_eq!(fee, 1500);
+    // base = 8500, boost = 10200 > reward 10000 => capped at reward
+    assert_eq!(fee, 0);
     assert_eq!(boost_actual, 10_200);
-    assert_eq!(learner_amount, 8500); // capped at base
+    assert_eq!(learner_amount, 10_000); // capped at escrowed reward
     assert!(capped);
+}
+
+#[test]
+fn test_compute_learner_payout_multiplier_200_capped_at_reward() {
+    let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(1000, 200);
+    // base = 850, boost = 1700 > reward 1000 => capped at reward
+    assert_eq!(fee, 0);
+    assert_eq!(boost_actual, 1700);
+    assert_eq!(learner_amount, 1000); // capped at escrowed reward
+    assert!(capped);
+    assert!(fee + learner_amount <= 1000);
+}
+
+#[test]
+fn test_compute_learner_payout_multiplier_110_applies_boost() {
+    // Multiplier above 100 but below the cap: boost applies in full and the
+    // fee shrinks to keep the total within the escrow.
+    // base = 850, boost = 850*110/100 = 935 <= reward 1000
+    let (fee, learner_amount, boost_actual, capped) = compute_learner_payout(1000, 110);
+    assert_eq!(fee, 65); // min(150, 1000 - 935)
+    assert_eq!(boost_actual, 935);
+    assert_eq!(learner_amount, 935);
+    assert!(!capped);
+    assert!(fee + learner_amount <= 1000);
 }
 
 #[test]
@@ -1275,11 +1326,7 @@ fn setup_vault_with_multiplier(
         .address();
 
     // Register the appropriate mock vault
-    let stake_vault_id = if multiplier == 120 {
-        env.register(MockStakeVaultWithMultiplier, ())
-    } else {
-        env.register(MockStakeVault, ())
-    };
+    let stake_vault_id = register_stake_vault(&env, multiplier);
 
     let admin = Address::generate(&env);
     let reward_pool = Address::generate(&env);
@@ -1291,7 +1338,7 @@ fn setup_vault_with_multiplier(
 // ── Payout Cap Event Tests ──────────────────────────────────────────────────
 
 #[test]
-fn test_review_submission_multiplier_100_no_cap_event() {
+fn test_review_submission_multiplier_100_emits_payout_event() {
     let (env, client, token_id, reward_pool) = setup_vault_with_multiplier(100);
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
@@ -1303,26 +1350,17 @@ fn test_review_submission_multiplier_100_no_cap_event() {
     let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
     client.submit_proof(&learner, &quest_id, &proof_hash);
 
-    let events_before = env.events().all().len();
-
     client.review_submission(&employer, &learner, &quest_id, &true);
 
-    // With 1.0x multiplier, learner_amount == base, no cap event emitted
+    // PayoutComputed is always published, including the uncapped path.
+    // Must be checked before further client calls reset the event log.
+    assert!(payout_computed_emitted(&env, &learner, quest_id));
+
+    // With 1.0x multiplier, learner_amount == base, uncapped path
     let fee = 150;
     let base_amount = 850;
     assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
     assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
-
-    // No PayoutComputed event should be emitted for 1.0x (no cap)
-    let new_events = env.events().all();
-    for i in events_before..new_events.len() {
-        let _event = new_events.get(i).unwrap();
-    }
-    assert_eq!(
-        token_balance(&env, &token_id, &learner),
-        base_amount,
-        "Multiplier 100 should give base amount without cap"
-    );
 }
 
 #[test]
@@ -1340,13 +1378,18 @@ fn test_review_submission_multiplier_120_capped() {
 
     client.review_submission(&employer, &learner, &quest_id, &true);
 
-    // With 1.2x multiplier, cap kicks in, learner gets base (not boosted amount)
-    // compute_learner_payout(1000, 120) -> fee=150, base=850, boost=1020, capped=true
-    // Since boost (1020) > base (850), learner receives only base (850)
-    let fee = 150;
-    let base_amount = 850;
-    assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
-    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
+    // PayoutComputed is published on the capped path too.
+    // Must be checked before further client calls reset the event log.
+    assert!(payout_computed_emitted(&env, &learner, quest_id));
+
+    // compute_learner_payout(1000, 120) -> fee=0, base=850, boost=1020,
+    // learner capped at the escrowed reward (1000), fee absorbs the overflow.
+    // Total payout = 1000 <= escrow.
+    assert_eq!(
+        token_balance(&env, &token_id, &learner),
+        reward_amount // boosted, hard-capped at reward
+    );
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), 0);
 }
 
 #[test]
@@ -1364,10 +1407,60 @@ fn test_review_submission_multiplier_120_large_reward() {
 
     client.review_submission(&employer, &learner, &quest_id, &true);
 
-    // fee = 15000, base = 85000, boosted = 102000 > 85000 => capped
-    let fee = 15_000;
-    let base_amount = 85_000;
-    assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
+    // base = 85000, boosted = 102000 > 100000 => learner capped at reward
+    assert_eq!(
+        token_balance(&env, &token_id, &learner),
+        reward_amount // capped at escrowed reward
+    );
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), 0);
+}
+
+#[test]
+fn test_review_submission_multiplier_200_capped_at_reward() {
+    let (env, client, token_id, reward_pool) = setup_vault_with_multiplier(200);
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[76u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[77u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // PayoutComputed published on the capped path
+    assert!(payout_computed_emitted(&env, &learner, quest_id));
+
+    // base = 850, boosted = 1700 > 1000 => learner capped at reward
+    assert_eq!(token_balance(&env, &token_id, &learner), reward_amount);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool), 0);
+}
+
+#[test]
+fn test_batch_review_emits_payout_event() {
+    let (env, client, token_id, reward_pool) = setup_vault_with_multiplier(100);
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[78u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+
+    // PayoutComputed published on the batch path as well.
+    // Must be checked before further client calls reset the event log.
+    assert!(payout_computed_emitted(&env, &learner, quest_id));
+
+    let fee = (reward_amount * 15) / 100;
+    let learner_amount = reward_amount - fee;
+    assert_eq!(token_balance(&env, &token_id, &learner), learner_amount);
     assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
 }
 
